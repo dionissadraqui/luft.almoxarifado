@@ -535,7 +535,6 @@ def _cor_saldo(saldo):
 
 
 def aplicar_cor_status(row):
-    """Cor da linha baseada na categoria KPI: vermelho=zerado, laranja=alerta, verde=disponível."""
     saldo = row.get("SALDO TOTAL", 0)
     try:
         s = float(saldo)
@@ -543,15 +542,12 @@ def aplicar_cor_status(row):
         s = 0
 
     if s == 0:
-        # Vermelho — sem estoque
         bg = "#2a0a0a"
         fg = "#ff3d00"
     elif s <= 3:
-        # Laranja — alerta
         bg = "#2a1a00"
         fg = "#ffb300"
     else:
-        # Verde — disponível
         bg = "#0a1f0a"
         fg = "#00e676"
 
@@ -561,13 +557,7 @@ def aplicar_cor_status(row):
 # GRÁFICOS
 # =====================================================
 
-# ── MODIFICAÇÃO 1 ──────────────────────────────────────────────────────────────
-# Substituído: gráfico de status por status → agora mostra alertas (laranja)
-# e zerados (vermelho) como barras horizontais por item/descrição
-# Recebe df_filtrado (com coluna SALDO TOTAL) em vez do antigo status_df
-# ──────────────────────────────────────────────────────────────────────────────
 def criar_grafico_status(df_filtrado):
-    """Barras horizontais: vermelho = zerados (saldo 0), laranja = alerta (saldo 1–3)."""
     df = df_filtrado.copy()
 
     zerados = df[df["SALDO TOTAL"] == 0][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
@@ -627,15 +617,10 @@ def criar_grafico_status(df_filtrado):
     return fig
 
 
-# ── MODIFICAÇÃO 2 ──────────────────────────────────────────────────────────────
-# Gráfico de colunas verticais — SEM ESTOQUE agrupado por STATUS/categoria
-# Cada barra = uma categoria, todas vermelhas, valor = soma VALORES UNITÁRIOS
-# ──────────────────────────────────────────────────────────────────────────────
 def criar_grafico_itens(df_filtrado, fullscreen=False):
     df = df_filtrado.copy()
     df["SALDO TOTAL"] = pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
 
-    # Apenas itens sem estoque
     df_zerado = df[df["SALDO TOTAL"] == 0].copy()
 
     if df_zerado.empty:
@@ -651,7 +636,6 @@ def criar_grafico_itens(df_filtrado, fullscreen=False):
         )
         return fig
 
-    # Valor unitário por item (o que falta)
     tem_unit = "VALORES UNITÁRIOS" in df_zerado.columns
     if tem_unit:
         df_zerado["_VU"] = pd.to_numeric(df_zerado["VALORES UNITÁRIOS"], errors="coerce").fillna(0)
@@ -660,7 +644,6 @@ def criar_grafico_itens(df_filtrado, fullscreen=False):
     else:
         df_zerado["_VU"] = 0.0
 
-    # Ordena por valor unitário decrescente
     df_zerado = df_zerado.sort_values("_VU", ascending=False).reset_index(drop=True)
 
     def _fmt_valor(v):
@@ -669,7 +652,6 @@ def criar_grafico_itens(df_filtrado, fullscreen=False):
         except:
             return "R$ 0,00"
 
-    # Uma barra por produto zerado
     cor_vermelho = CORES_KPI["MANUTENCAO"]["border"]
 
     labels  = df_zerado["DESCRIÇÃO"].apply(
@@ -678,55 +660,37 @@ def criar_grafico_itens(df_filtrado, fullscreen=False):
     valores = df_zerado["_VU"].tolist()
     textos  = [_fmt_valor(v) for v in valores]
 
-    # Ordena maior → menor para barras mais altas à esquerda
     ordem = sorted(range(len(valores)), key=lambda i: valores[i], reverse=True)
     labels  = [labels[i]  for i in ordem]
     valores = [valores[i] for i in ordem]
     textos  = [textos[i]  for i in ordem]
 
     fig = go.Figure(data=[go.Bar(
-        x=labels,
-        y=valores,
-        marker=dict(
-            color=cor_vermelho,
-            line=dict(color="rgba(255,255,255,0.20)", width=1),
-        ),
-        text=textos,
-        textposition="outside",
+        x=labels, y=valores,
+        marker=dict(color=cor_vermelho, line=dict(color="rgba(255,255,255,0.20)", width=1)),
+        text=textos, textposition="outside",
         textfont=dict(color="#ffffff", size=16, family="Arial Black"),
         hovertemplate="<b>%{x}</b><br>Valor unitário: %{text}<extra></extra>",
-        showlegend=False,
-        cliponaxis=False,
+        showlegend=False, cliponaxis=False,
     )])
 
     n = len(df_zerado)
-    # Margem topo generosa para o texto acima das barras nunca ser cortado
     altura = 680 if fullscreen else max(480, n * 30 + 220)
     val_max = max(valores) if valores else 1
-    y_range_max = val_max * 1.30   # 30% acima do maior valor
+    y_range_max = val_max * 1.30
 
     fig.update_layout(
         hoverlabel=dict(bgcolor="#1e1e1e", bordercolor=cor_vermelho,
                         font=dict(size=13, color="#ffffff", family="Arial Black"), namelength=-1),
-        height=altura,
-        margin=dict(l=10, r=10, t=80, b=200),
+        height=altura, margin=dict(l=10, r=10, t=80, b=200),
         paper_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
         plot_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
-        font=dict(color="#f5f5f5", size=13),
-        bargap=0.25,
-        xaxis=dict(
-            tickangle=-50,
-            tickfont=dict(size=10, family="Arial Black", color="#f5f5f5"),
-            automargin=True,
-            showgrid=False,
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor=CORES_INTERFACE["grid"],
-            tickfont=dict(size=12, color=CORES_INTERFACE["texto_secundario"]),
-            tickprefix="R$ ",
-            range=[0, y_range_max],
-        ),
+        font=dict(color="#f5f5f5", size=13), bargap=0.25,
+        xaxis=dict(tickangle=-50, tickfont=dict(size=10, family="Arial Black", color="#f5f5f5"),
+                   automargin=True, showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor=CORES_INTERFACE["grid"],
+                   tickfont=dict(size=12, color=CORES_INTERFACE["texto_secundario"]),
+                   tickprefix="R$ ", range=[0, y_range_max]),
     )
     return fig
 
@@ -736,7 +700,6 @@ def criar_grafico_posicao(posicao_df, fullscreen=False):
         return go.Figure()
 
     df_plot = posicao_df if fullscreen else posicao_df.head(10)
-    # Zerados → vermelho, outros → paleta normal
     cor_zerado = CORES_KPI["MANUTENCAO"]["border"]
     tem_saldo = "SALDO_TOTAL" in df_plot.columns
     cores = [
@@ -751,9 +714,7 @@ def criar_grafico_posicao(posicao_df, fullscreen=False):
         except:
             return "R$ 0,00"
 
-    # Monta texto hover por fatia sem customdata
     tem_extra = "SALDO_TOTAL" in df_plot.columns and "VALOR_TOTAL" in df_plot.columns
-
     tem_itens_info = "ITENS_INFO" in df_plot.columns
     hover_texts = []
     for _, r in df_plot.iterrows():
@@ -766,7 +727,6 @@ def criar_grafico_posicao(posicao_df, fullscreen=False):
             txt += f"<br>Qtd. em estoque: {saldo}<br>Valor total: {valor_total}"
         hover_texts.append(txt)
 
-    # Texto dentro da fatia = saldo total; zerados mostram "0"
     tem_saldo_col = "SALDO_TOTAL" in df_plot.columns
     if tem_saldo_col:
         textos_fatia = df_plot["SALDO_TOTAL"].fillna(0).astype(int).apply(
@@ -778,9 +738,7 @@ def criar_grafico_posicao(posicao_df, fullscreen=False):
     fig = go.Figure(data=[go.Pie(
         labels=df_plot["POSIÇÃO"], values=df_plot["QUANTIDADE"],
         hole=0.62, marker=dict(colors=cores, line=dict(color='#0a0a0a', width=2)),
-        textinfo='none',
-        text=hover_texts,
-        customdata=textos_fatia,
+        textinfo='none', text=hover_texts, customdata=textos_fatia,
         texttemplate='%{customdata}',
         textfont=dict(color='#ffffff', size=18, family='Arial Black'),
         hovertemplate='%{text}<extra></extra>'
@@ -1155,27 +1113,20 @@ def mostrar_detalhes_kpi(titulo, cor_hex, df_kpi):
 # PAINÉIS DE GRÁFICO COM BOTÃO FULLSCREEN
 # =====================================================
 
-# Painel esquerdo: 4 cards KPI com VALOR TOTAL por categoria
 def criar_painel_status(df_filtrado):
     df = df_filtrado.copy()
     df["SALDO TOTAL"] = pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
 
-    # Calcula valor por linha: VALORES UNITÁRIOS × SALDO TOTAL, depois soma por categoria
-    # Para SEM ESTOQUE (saldo=0): soma apenas VALORES UNITÁRIOS (saldo × unitário = 0, então
-    # usamos o valor unitário puro para representar o que falta em estoque)
     tem_unit = "VALORES UNITÁRIOS" in df.columns
     tem_vt   = "VALOR TOTAL" in df.columns
 
     if tem_unit:
-        # Tem valor unitário: multiplica por saldo para obter valor real
         df["_VU"] = pd.to_numeric(df["VALORES UNITÁRIOS"], errors="coerce").fillna(0)
         df["_VT_CALC"] = df["_VU"] * pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
     elif tem_vt:
-        # Só tem VALOR TOTAL: usa direto — mas zerado (saldo=0) é ignorado (já é 0 ou incorreto)
-        df["_VU"] = 0.0  # sem unitário, não há base para calcular reposição
+        df["_VU"] = 0.0
         vt_col = pd.to_numeric(df["VALOR TOTAL"], errors="coerce").fillna(0)
         saldo_col = pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
-        # Zera o valor total das linhas com saldo 0
         df["_VT_CALC"] = vt_col.where(saldo_col > 0, other=0.0)
     else:
         df["_VU"] = 0.0
@@ -1183,97 +1134,65 @@ def criar_painel_status(df_filtrado):
 
     def _soma_valor(mask, zerado=False):
         if zerado:
-            # sem estoque: usa valor unitário se disponível, senão 0
             return float(df.loc[mask, "_VU"].sum())
         return float(df.loc[mask, "_VT_CALC"].sum())
 
-    mask_disp       = df["SALDO TOTAL"] > 3
-    mask_alerta     = (df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)
-    mask_zerado     = df["SALDO TOTAL"] == 0
-    # Total = apenas itens com saldo > 0 (zerados não entram no valor real em estoque)
-    mask_total      = df["SALDO TOTAL"] > 0
+    mask_disp   = df["SALDO TOTAL"] > 3
+    mask_alerta = (df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)
+    mask_zerado = df["SALDO TOTAL"] == 0
+    mask_total  = df["SALDO TOTAL"] > 0
 
-    vt_total    = _soma_valor(mask_total)
-    vt_disp     = _soma_valor(mask_disp)
-    vt_alerta   = _soma_valor(mask_alerta)
-    vt_zerado   = _soma_valor(mask_zerado, zerado=True)
+    vt_total  = _soma_valor(mask_total)
+    vt_disp   = _soma_valor(mask_disp)
+    vt_alerta = _soma_valor(mask_alerta)
+    vt_zerado = _soma_valor(mask_zerado, zerado=True)
 
     def _fmt(v):
-        """Formata valor: ex. 1.234.567,89"""
         try:
             return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         except:
             return "R$ 0,00"
 
-    # Barrinha de progresso proporcional ao total (min 2% para zerado não sumir)
     def _pct(v, total):
         if total <= 0:
             return 2
-        pct = (v / total) * 100
-        return max(2, round(pct, 1))  # mínimo 2% para sempre mostrar a barra
+        return max(2, round((v / total) * 100, 1))
 
-    pct_total   = 100
-    pct_disp    = _pct(vt_disp, vt_total)
-    pct_alerta  = _pct(vt_alerta, vt_total)
-    pct_zerado  = _pct(vt_zerado, vt_total)  # sempre >= 2% → barra visível mesmo zerado
+    pct_total  = 100
+    pct_disp   = _pct(vt_disp, vt_total)
+    pct_alerta = _pct(vt_alerta, vt_total)
+    pct_zerado = _pct(vt_zerado, vt_total)
 
     kpis_valor = [
-        ("TOTAL DE ITENS",  _fmt(vt_total),  CORES_KPI["TOTAL"]["border"],      CORES_KPI["TOTAL"]["shadow"],      pct_total,  "kpi-azul"),
-        ("DISPONÍVEIS",     _fmt(vt_disp),   CORES_KPI["DISPONIVEIS"]["border"], CORES_KPI["DISPONIVEIS"]["shadow"], pct_disp,   "kpi-verde"),
-        ("ALERTA",          _fmt(vt_alerta), CORES_KPI["OPERACAO"]["border"],    CORES_KPI["OPERACAO"]["shadow"],    pct_alerta, "kpi-laranja"),
-        ("SEM ESTOQUE",     _fmt(vt_zerado), CORES_KPI["MANUTENCAO"]["border"],  CORES_KPI["MANUTENCAO"]["shadow"],  pct_zerado, "kpi-vermelho"),
+        ("TOTAL DE ITENS", _fmt(vt_total),  CORES_KPI["TOTAL"]["border"],      CORES_KPI["TOTAL"]["shadow"],      pct_total),
+        ("DISPONÍVEIS",    _fmt(vt_disp),   CORES_KPI["DISPONIVEIS"]["border"], CORES_KPI["DISPONIVEIS"]["shadow"], pct_disp),
+        ("ALERTA",         _fmt(vt_alerta), CORES_KPI["OPERACAO"]["border"],    CORES_KPI["OPERACAO"]["shadow"],    pct_alerta),
+        ("SEM ESTOQUE",    _fmt(vt_zerado), CORES_KPI["MANUTENCAO"]["border"],  CORES_KPI["MANUTENCAO"]["shadow"],  pct_zerado),
     ]
 
-    # Monta HTML único: um card por categoria, empilhados verticalmente,
-    # cada um com barra horizontal proporcional ao valor — largo e comprido para caber tudo
     rows_html = ""
-    for label, valor, cor, sombra, pct, _ in kpis_valor:
+    for label, valor, cor, sombra, pct in kpis_valor:
         rows_html += f'''
-        <div style="
-            display:flex; align-items:center; gap:18px;
-            background:rgba(255,255,255,0.04);
-            border:1.5px solid {cor};
-            border-left:6px solid {cor};
-            border-radius:10px;
-            padding:14px 20px;
-            margin-bottom:10px;
-            box-shadow: 0 0 14px {sombra}, 0 2px 8px rgba(0,0,0,0.4);
-            box-sizing:border-box;
-        ">
-            <!-- label + valor -->
-            <div style="min-width:220px; max-width:220px;">
-                <div style="color:{cor}; font-size:0.72rem; font-weight:800;
-                    text-transform:uppercase; letter-spacing:1.4px; margin-bottom:4px;
-                    text-shadow:0 0 8px {sombra};">
-                    {label}
-                </div>
-                <div style="color:{cor}; font-size:1.5rem; font-weight:900;
-                    letter-spacing:-0.5px; line-height:1.1;
-                    text-shadow:0 0 14px {sombra};">
-                    {valor}
-                </div>
+        <div style="display:flex;align-items:center;gap:18px;background:rgba(255,255,255,0.04);
+            border:1.5px solid {cor};border-left:6px solid {cor};border-radius:10px;
+            padding:14px 20px;margin-bottom:10px;
+            box-shadow:0 0 14px {sombra},0 2px 8px rgba(0,0,0,0.4);box-sizing:border-box;">
+            <div style="min-width:220px;max-width:220px;">
+                <div style="color:{cor};font-size:0.72rem;font-weight:800;text-transform:uppercase;
+                    letter-spacing:1.4px;margin-bottom:4px;text-shadow:0 0 8px {sombra};">{label}</div>
+                <div style="color:{cor};font-size:1.5rem;font-weight:900;letter-spacing:-0.5px;
+                    line-height:1.1;text-shadow:0 0 14px {sombra};">{valor}</div>
             </div>
-            <!-- barra horizontal -->
-            <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
-                <div style="background:rgba(255,255,255,0.07); border-radius:8px;
-                    height:22px; width:100%; overflow:hidden; position:relative;">
-                    <div style="
-                        height:22px; width:{pct}%;
-                        background: linear-gradient(90deg, {cor}cc, {cor});
-                        border-radius:8px;
-                        box-shadow: 0 0 12px {sombra};
-                        display:flex; align-items:center; justify-content:flex-end;
-                        padding-right:8px; box-sizing:border-box;
-                    ">
-                        <span style="color:#fff; font-size:0.7rem; font-weight:800;
-                            letter-spacing:0.5px; white-space:nowrap;">
-                            {pct:.1f}%
-                        </span>
+            <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+                <div style="background:rgba(255,255,255,0.07);border-radius:8px;height:22px;width:100%;overflow:hidden;">
+                    <div style="height:22px;width:{pct}%;background:linear-gradient(90deg,{cor}cc,{cor});
+                        border-radius:8px;box-shadow:0 0 12px {sombra};display:flex;align-items:center;
+                        justify-content:flex-end;padding-right:8px;box-sizing:border-box;">
+                        <span style="color:#fff;font-size:0.7rem;font-weight:800;letter-spacing:0.5px;white-space:nowrap;">{pct:.1f}%</span>
                     </div>
                 </div>
             </div>
-        </div>
-        '''
+        </div>'''
 
     with st.container(border=True):
         st.markdown('<div class="card-title">💰 VALOR TOTAL POR SITUAÇÃO</div>', unsafe_allow_html=True)
@@ -1311,10 +1230,8 @@ def criar_painel_itens(df_filtrado):
         st.plotly_chart(criar_grafico_itens(df_filtrado), use_container_width=True, config={'displayModeBar': False})
 
 
-# mostrar_grafico_fullscreen agora passa df_filtrado para o gráfico de status
 def mostrar_grafico_fullscreen(grafico_id, df_filtrado, posicao_df, itens_df):
     titulos = {
-        "status":  "⚠️ ALERTAS E SEM ESTOQUE",
         "posicao": "📍 DISTRIBUIÇÃO POR POSIÇÃO",
         "itens":   "🚨 SEM ESTOQUE — VALOR POR CATEGORIA",
     }
@@ -1349,7 +1266,7 @@ def mostrar_grafico_fullscreen(grafico_id, df_filtrado, posicao_df, itens_df):
 
 
 # =====================================================
-# SIDEBAR
+# SIDEBAR  ← CORRIGIDO: persiste dados no session_state
 # =====================================================
 def criar_sidebar(loading_placeholder):
     with st.sidebar:
@@ -1359,18 +1276,32 @@ def criar_sidebar(loading_placeholder):
         uploaded_file = st.file_uploader("📁 CARREGAR ARQUIVO", type=['xlsx', 'xls'])
 
         if uploaded_file is not None:
-            show_loading_screen(loading_placeholder)
-            df_base = load_data_from_file(uploaded_file.getvalue())
-            loading_placeholder.empty()
-            if not df_base.empty:
-                st.success(f"✅ {len(df_base)} itens carregados!")
-                if st.button("🔄 ATUALIZAR DADOS AGORA", use_container_width=True):
-                    st.cache_data.clear()
-                    st.rerun()
-            return df_base
+            # Identificador único para o arquivo atual
+            file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+
+            # Só reprocessa se for um arquivo diferente do que está em cache
+            if st.session_state.get("_file_key") != file_key:
+                show_loading_screen(loading_placeholder)
+                df_novo = load_data_from_file(uploaded_file.getvalue())
+                loading_placeholder.empty()
+                if not df_novo.empty:
+                    st.session_state["_df_base"]  = df_novo
+                    st.session_state["_file_key"] = file_key
+
+        # Mostra status e botão de atualizar se tiver dados carregados
+        if "_df_base" in st.session_state and not st.session_state["_df_base"].empty:
+            st.success(f"✅ {len(st.session_state['_df_base'])} itens carregados!")
+            if st.button("🔄 ATUALIZAR DADOS AGORA", use_container_width=True):
+                st.cache_data.clear()
+                for k in ["_df_base", "_file_key"]:
+                    st.session_state.pop(k, None)
+                st.rerun()
+            return st.session_state["_df_base"]
         else:
-            st.info("⬆️ Faça upload da planilha")
+            if uploaded_file is None:
+                st.info("⬆️ Faça upload da planilha")
             return pd.DataFrame()
+
 
 # =====================================================
 # MAIN
@@ -1415,7 +1346,7 @@ def main():
         ("ZERADOS",     CORES_KPI["MANUTENCAO"]["border"],  "_kpi_df_ZERADOS"),
     ]
     for nome, cor, df_key in kpi_map:
-        key_sel = f"_kpi_sel_{nome}"
+        key_sel    = f"_kpi_sel_{nome}"
         key_aberto = f"_kpi_aberto_{nome}"
         if (st.session_state.get(key_sel) or st.session_state.get(key_aberto)) and df_key in st.session_state:
             mostrar_detalhes_kpi(nome, cor, st.session_state[df_key])
@@ -1433,7 +1364,6 @@ def main():
         ].copy()
         df_pos["SALDO TOTAL"] = pd.to_numeric(df_pos["SALDO TOTAL"], errors="coerce").fillna(0)
 
-        # Calcula valor total por posição: VALORES UNITÁRIOS × SALDO TOTAL
         if "VALORES UNITÁRIOS" in df_pos.columns:
             df_pos["_VT"] = pd.to_numeric(df_pos["VALORES UNITÁRIOS"], errors="coerce").fillna(0) * df_pos["SALDO TOTAL"]
         elif "VALOR TOTAL" in df_pos.columns:
@@ -1448,12 +1378,11 @@ def main():
             except:
                 return "—"
 
-        # Monta lista de itens por posição: "descrição (R$ valor_unit)"
-        tem_desc = "DESCRIÇÃO" in df_pos.columns
-        tem_vu   = "VALORES UNITÁRIOS" in df_pos.columns
-
+        tem_desc   = "DESCRIÇÃO" in df_pos.columns
+        tem_vu     = "VALORES UNITÁRIOS" in df_pos.columns
         tem_vt_col = "VALOR TOTAL" in df_pos.columns
 
+        # ── CORRIGIDO: pandas 2.2+ exige include_groups=False em groupby().apply() ──
         def _itens_info(grp):
             partes = []
             for _, r in grp.iterrows():
@@ -1467,7 +1396,6 @@ def main():
                 else:
                     vt = 0.0
                 qtd = int(saldo)
-                # Zerados entram com indicador visual
                 status_icon = "🔴" if qtd == 0 else "📦"
                 partes.append(
                     f"{status_icon} Descrição: {desc}<br>"
@@ -1477,9 +1405,15 @@ def main():
                 )
             return "<br>".join(partes)
 
-        itens_info_map = df_pos.groupby("POSIÇÃO").apply(_itens_info).to_dict()
+        try:
+            # pandas >= 2.2
+            itens_info_map = df_pos.groupby("POSIÇÃO").apply(
+                _itens_info, include_groups=False
+            ).to_dict()
+        except TypeError:
+            # pandas < 2.2 (fallback)
+            itens_info_map = df_pos.groupby("POSIÇÃO").apply(_itens_info).to_dict()
 
-        # Agrupa por posição — QUANTIDADE = contagem de linhas, SALDO = soma saldo real
         pos_counts = df_pos.groupby("POSIÇÃO").agg(
             QUANTIDADE=("POSIÇÃO", "count"),
             SALDO=("SALDO TOTAL", "sum"),
@@ -1490,10 +1424,9 @@ def main():
 
         if not pos_counts.empty:
             posicao_df = pos_counts.rename(columns={"SALDO": "SALDO_TOTAL", "VALOR": "VALOR_TOTAL"})
-            # Garante que zerados tenham QUANTIDADE mínima 1 para aparecer na rosca
             posicao_df["QUANTIDADE"] = posicao_df["QUANTIDADE"].clip(lower=1)
 
-    # Modo fullscreen — passa df_filtrado para o gráfico de status
+    # Modo fullscreen
     if st.session_state.get("_grafico_fs"):
         mostrar_grafico_fullscreen(
             st.session_state["_grafico_fs"],
@@ -1503,7 +1436,7 @@ def main():
 
     col1, col2 = st.columns(2)
     with col1:
-        criar_painel_status(df_filtrado)   # ← recebe df_filtrado
+        criar_painel_status(df_filtrado)
     with col2:
         criar_painel_posicao(posicao_df)
 
