@@ -1259,12 +1259,9 @@ def criar_sidebar(loading_placeholder):
         st.header("🎛️ FILTROS DO ALMOXARIFADO")
         st.divider()
 
-        st.subheader("📁 CARREGAR ARQUIVO")
-
         uploaded_file = st.file_uploader(
-            "Faça upload do arquivo Excel", type=['xlsx', 'xls'],
-            help="Selecione o arquivo da planilha de almoxarifado",
-            label_visibility="collapsed"
+            "📁 CARREGAR ARQUIVO", type=['xlsx', 'xls'],
+            label_visibility="visible"
         )
 
         df_base = pd.DataFrame()
