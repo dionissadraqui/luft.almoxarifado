@@ -7,3 +7,6 @@ streamlit-folium==0.26.1
 folium==0.20.0
 geopy==2.4.1
 requests==2.32.5
+altair==5.5.0
+pydeck==0.9.1
+protobuf==4.25.8
