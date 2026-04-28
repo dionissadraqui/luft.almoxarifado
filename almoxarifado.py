@@ -351,6 +351,8 @@ def load_custom_css():
 
     .stButton button {{ background-color: {CORES_INTERFACE["botao_primary"]} !important; color: white !important; border: none !important; border-radius: 6px !important; font-weight: 600 !important; padding: 10px 20px !important; transition: all 0.3s !important; }}
     .stButton button:hover {{ background-color: #cc0000 !important; border: 1px solid #ffffff !important; box-shadow: 0 0 12px #ffffff, 0 0 24px rgba(255,0,0,0.8) !important; color: white !important; }}
+    .stDownloadButton button {{ background-color: {CORES_INTERFACE["botao_primary"]} !important; color: white !important; border: none !important; border-radius: 6px !important; font-weight: 600 !important; padding: 10px 20px !important; transition: all 0.3s !important; }}
+    .stDownloadButton button:hover {{ background-color: #cc0000 !important; border: 1px solid #ffffff !important; box-shadow: 0 0 12px #ffffff, 0 0 24px rgba(255,0,0,0.8) !important; color: white !important; }}
 
     section[data-testid="stSidebar"] {{ background-color: {CORES_INTERFACE["sidebar_background"]} !important; border-right: 1px solid {CORES_INTERFACE["sidebar_border"]} !important; }}
     section[data-testid="stSidebar"] * {{ color: {CORES_INTERFACE["texto_principal"]} !important; }}
@@ -415,12 +417,6 @@ def _sem_acento(texto):
 
 
 def _normalizar_nomes_colunas(df):
-    """
-    Renomeia colunas que chegam sem acento (Windows/Excel) para os nomes
-    oficiais com acento usados pelo app.  Comparação é feita sem acento e
-    sem case, portanto 'codigo', 'CODIGO', 'Código' e 'CÓDIGO' são todos
-    reconhecidos e mapeados para 'CÓDIGO'.
-    """
     MAPA = {
         "CODIGO":            "CÓDIGO",
         "DESCRICAO":         "DESCRIÇÃO",
@@ -435,7 +431,7 @@ def _normalizar_nomes_colunas(df):
     renomear = {}
     for col in df.columns:
         chave = _sem_acento(col).strip().upper()
-        chave = ' '.join(chave.split())          # colapsa espaços internos
+        chave = ' '.join(chave.split())
         oficial = MAPA.get(chave)
         if oficial and col != oficial:
             renomear[col] = oficial
@@ -455,39 +451,23 @@ def _renomear_colunas_duplicadas(df):
     return df
 
 
-# ── PADRÃO IDÊNTICO À TORRE: recebe o objeto UploadedFile diretamente.
-#    O @st.cache_data usa o hash interno do Streamlit para o arquivo.
-#    NÃO usamos io.BytesIO aqui — pandas lê o UploadedFile nativamente.
 @st.cache_data
 def load_data_from_file(file_source):
-    """
-    Carrega e normaliza a planilha de almoxarifado.
-    Recebe o UploadedFile diretamente (mesmo padrão da Torre de Controle)
-    para que o @st.cache_data funcione corretamente no Streamlit Cloud.
-    """
     try:
-        # ── Lê normalmente com header=0 (pandas detecta o cabeçalho da linha 0).
-        #    Não usamos header=None + detecção manual; a planilha de almoxarifado
-        #    tem estrutura normal com cabeçalho na primeira linha.
         df = pd.read_excel(file_source, sheet_name=0)
 
         if df.empty:
             st.error("❌ A planilha está vazia!")
             return pd.DataFrame()
 
-        # Normaliza nomes das colunas: strip + upper
         df.columns = [
             str(c).strip().upper() if pd.notna(c) else f"COL_{i}"
             for i, c in enumerate(df.columns)
         ]
 
-        # Corrige acentos ausentes (CODIGO → CÓDIGO, DESCRICAO → DESCRIÇÃO …)
         df = _normalizar_nomes_colunas(df)
-
-        # Renomeia duplicatas
         df = _renomear_colunas_duplicadas(df)
 
-        # Valida coluna obrigatória
         if "CÓDIGO" not in df.columns:
             st.error(
                 f"❌ Coluna 'CÓDIGO' não encontrada!  "
@@ -495,7 +475,6 @@ def load_data_from_file(file_source):
             )
             return pd.DataFrame()
 
-        # Remove linhas sem código
         df = df[
             df["CÓDIGO"].notna() &
             (df["CÓDIGO"].astype(str).str.strip() != "")
@@ -505,7 +484,6 @@ def load_data_from_file(file_source):
             st.error("❌ Nenhum dado válido encontrado!")
             return pd.DataFrame()
 
-        # Limpa colunas de texto — mesmo padrão da Torre
         colunas_texto = ["STATUS", "CÓDIGO", "DESCRIÇÃO", "POSIÇÃO"]
         for col in colunas_texto:
             if col in df.columns:
@@ -520,12 +498,10 @@ def load_data_from_file(file_source):
                     other=pd.NA
                 )
 
-        # Converte colunas numéricas
         for col in ["ENTRADA", "SAIDA", "SALDO TOTAL"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # Alias: planilhas que usam "SALDO" em vez de "SALDO TOTAL"
         if "SALDO TOTAL" not in df.columns:
             for alias in ["SALDO", "QUANTIDADE"]:
                 if alias in df.columns:
@@ -534,18 +510,15 @@ def load_data_from_file(file_source):
             else:
                 df["SALDO TOTAL"] = 0
 
-        # Valores unitários (aceita vírgula como decimal)
         if "VALORES UNITÁRIOS" in df.columns:
             df["VALORES UNITÁRIOS"] = (
                 df["VALORES UNITÁRIOS"].astype(str).str.replace(',', '.', regex=False)
             )
             df["VALORES UNITÁRIOS"] = pd.to_numeric(df["VALORES UNITÁRIOS"], errors='coerce')
 
-        # Valor total
         if "VALOR TOTAL" in df.columns:
             df["VALOR TOTAL"] = pd.to_numeric(df["VALOR TOTAL"], errors='coerce').fillna(0)
 
-        # Garante coluna STATUS
         if "STATUS" in df.columns:
             df["STATUS"] = df["STATUS"].fillna("ESTOQUE").astype(str).str.upper()
         else:
@@ -591,7 +564,6 @@ def aplicar_cor_status(row):
 # =====================================================
 
 def criar_grafico_status(df_filtrado):
-    """Barras horizontais: vermelho = zerados, laranja = alerta (saldo 1–3)."""
     df = df_filtrado.copy()
     zerados = df[df["SALDO TOTAL"] == 0][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
     alertas = df[(df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
@@ -923,7 +895,6 @@ def criar_kpis(df_filtrado):
     alerta      = len(df_filtrado[(df_filtrado["SALDO TOTAL"] > 0) & (df_filtrado["SALDO TOTAL"] <= 3)])
     zerados     = len(df_filtrado[df_filtrado["SALDO TOTAL"] == 0])
 
-    # ── Persiste DataFrames por categoria no session_state — idêntico à Torre
     st.session_state["_kpi_df_TOTAL"]       = df_filtrado
     st.session_state["_kpi_df_DISPONIVEIS"] = df_filtrado[df_filtrado["SALDO TOTAL"] > 3].copy()
     st.session_state["_kpi_df_ALERTA"]      = df_filtrado[(df_filtrado["SALDO TOTAL"] > 0) & (df_filtrado["SALDO TOTAL"] <= 3)].copy()
@@ -967,7 +938,6 @@ def criar_kpis(df_filtrado):
 
 
 def mostrar_detalhes_kpi(titulo, cor_hex, df_kpi):
-    """Painel fullscreen dois níveis — idêntico à Torre de Controle."""
     st.markdown("""
     <style>
     section[data-testid="stSidebar"] { display: none !important; }
@@ -984,7 +954,6 @@ def mostrar_detalhes_kpi(titulo, cor_hex, df_kpi):
     if key_aberto not in st.session_state:
         st.session_state[key_aberto] = True
 
-    # ── NÍVEL 2: card de item específico ──
     if st.session_state[key_sel] is not None:
         codigo_sel = st.session_state[key_sel]
         resultado  = df_kpi[df_kpi["CÓDIGO"].astype(str).str.strip() == str(codigo_sel).strip()]
@@ -1016,7 +985,6 @@ def mostrar_detalhes_kpi(titulo, cor_hex, df_kpi):
             st.markdown(_html_card_completo(resultado.iloc[0], cor_override=cor_hex), unsafe_allow_html=True)
         return
 
-    # ── NÍVEL 1: grade de mini cards ──
     col_inicio, col_espacador, col_fechar = st.columns([1, 5, 1])
     with col_inicio:
         if st.button("🏠 INÍCIO", key=f"btn_inicio_{titulo}", use_container_width=True):
@@ -1252,7 +1220,7 @@ def mostrar_grafico_fullscreen(grafico_id, df_filtrado, posicao_df):
 
 
 # =====================================================
-# SIDEBAR — idêntico ao padrão da Torre de Controle
+# SIDEBAR
 # =====================================================
 def criar_sidebar(loading_placeholder):
     with st.sidebar:
@@ -1267,19 +1235,168 @@ def criar_sidebar(loading_placeholder):
         df_base = pd.DataFrame()
 
         if uploaded_file is not None:
-            # ── Mesmo padrão da Torre: passa o objeto diretamente ao cache ──
             show_loading_screen(loading_placeholder)
             df_base = load_data_from_file(uploaded_file)
             loading_placeholder.empty()
             if not df_base.empty:
                 st.success(f"✅ {len(df_base)} itens carregados!")
-                if st.button("🔄 ATUALIZAR DADOS AGORA", use_container_width=True):
-                    st.cache_data.clear()
+             
+
+                # ── Seção de relatório ────────────────────────────────────
+                st.divider()
+                st.markdown(
+                    "<div style='color:#ffb300;font-weight:800;font-size:0.8rem;"
+                    "text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;'>"
+                    "📊 RELATÓRIO DE ALERTAS</div>",
+                    unsafe_allow_html=True
+                )
+
+                df_tmp = df_base.copy()
+                df_tmp["SALDO TOTAL"] = pd.to_numeric(
+                    df_tmp.get("SALDO TOTAL", 0), errors="coerce"
+                ).fillna(0)
+                df_alerta = df_tmp[
+                    (df_tmp["SALDO TOTAL"] > 0) & (df_tmp["SALDO TOTAL"] <= 3)
+                ].copy()
+                df_zerado = df_tmp[df_tmp["SALDO TOTAL"] == 0].copy()
+
+                n_alerta = len(df_alerta)
+                n_zerado = len(df_zerado)
+
+                st.markdown(
+                    f"<div style='font-size:0.72rem;color:#aaa;margin-bottom:8px;'>"
+                    f"🟠 Alerta: <b style='color:#ffb300;'>{n_alerta}</b> itens &nbsp;|&nbsp; "
+                    f"🔴 Zerados: <b style='color:#ff3d00;'>{n_zerado}</b> itens</div>",
+                    unsafe_allow_html=True
+                )
+
+                # Botão visualizar (abre preview na tela principal)
+                if st.button(
+                    "👁️ VISUALIZAR RELATÓRIO",
+                    key="btn_preview_relatorio",
+                    use_container_width=True
+                ):
+                    st.session_state["_relatorio_preview"] = True
                     st.rerun()
+
+                # Botão baixar
+                if n_alerta > 0 or n_zerado > 0:
+                    try:
+                        from gerar_relatorio import gerar_bytes_relatorio
+                        rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
+                        st.download_button(
+                            label="⬇️ BAIXAR RELATÓRIO (.pdf)",
+                            data=rel_bytes,
+                            file_name="relatorio_alertas_almoxarifado.pdf",
+                            mime="application/pdf",
+                            key="btn_download_relatorio",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Erro ao gerar relatório: {e}")
+                else:
+                    st.info("✅ Nenhum alerta ou item zerado para exportar.")
         else:
             st.info("⬆️ Faça upload da planilha")
 
         return df_base
+
+
+# =====================================================
+# PREVIEW DO RELATÓRIO (tela principal)
+# =====================================================
+def mostrar_preview_relatorio(df_base):
+    """Exibe preview formatado dos itens de alerta e zerados na tela principal."""
+    st.markdown("""
+    <style>
+    section[data-testid="stSidebar"] { display: none !important; }
+    .main .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    df_tmp = df_base.copy()
+    df_tmp["SALDO TOTAL"] = pd.to_numeric(df_tmp.get("SALDO TOTAL", 0), errors="coerce").fillna(0)
+    df_alerta = df_tmp[(df_tmp["SALDO TOTAL"] > 0) & (df_tmp["SALDO TOTAL"] <= 3)].copy()
+    df_zerado = df_tmp[df_tmp["SALDO TOTAL"] == 0].copy()
+
+    # Ordena por saldo total decrescente
+    if not df_alerta.empty:
+        df_alerta = df_alerta.sort_values("SALDO TOTAL", ascending=False)
+    if not df_zerado.empty:
+        df_zerado = df_zerado.sort_values("SALDO TOTAL", ascending=False)
+
+    col_titulo, col_fechar = st.columns([9, 1])
+    with col_titulo:
+        st.markdown(
+            "<div class='card-title' style='font-size:1.4rem;'>📊 RELATÓRIO DE ALERTAS — PREVIEW</div>",
+            unsafe_allow_html=True
+        )
+    with col_fechar:
+        if st.button("✕ FECHAR", key="btn_fechar_preview", use_container_width=True):
+            st.session_state.pop("_relatorio_preview", None)
+            st.rerun()
+
+    st.markdown("<hr style='border-color:#484848;margin:4px 0 16px 0;'>", unsafe_allow_html=True)
+
+    # Botão de download no topo do preview também
+    n_alerta = len(df_alerta)
+    n_zerado = len(df_zerado)
+    if n_alerta > 0 or n_zerado > 0:
+        try:
+            from gerar_relatorio import gerar_bytes_relatorio
+            rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
+            st.download_button(
+                label="⬇️ BAIXAR RELATÓRIO (.pdf)",
+                data=rel_bytes,
+                file_name="relatorio_alertas_almoxarifado.pdf",
+                mime="application/pdf",
+                key="btn_download_preview_top",
+                use_container_width=False
+            )
+        except Exception as e:
+            st.error(f"Erro ao gerar relatório: {e}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Seção laranja ────────────────────────────────────────────────────
+    cor_lrj = CORES_KPI["OPERACAO"]["border"]
+    st.markdown(
+        f"<div style='border-left:6px solid {cor_lrj};padding:10px 18px;"
+        f"background:rgba(255,179,0,0.12);border-radius:0 8px 8px 0;margin-bottom:12px;'>"
+        f"<span style='color:{cor_lrj};font-weight:800;font-size:1rem;text-transform:uppercase;letter-spacing:1px;'>"
+        f"⚠️ ALERTA — ESTOQUE BAIXO (saldo 1–3)</span>"
+        f"<span style='color:#aaa;font-size:0.8rem;margin-left:12px;'>{n_alerta} itens</span></div>",
+        unsafe_allow_html=True
+    )
+    if df_alerta.empty:
+        st.info("Nenhum item em alerta.")
+    else:
+        colunas_show = [c for c in df_alerta.columns if not c.startswith("_")]
+        st.dataframe(
+            df_alerta[colunas_show].style.apply(aplicar_cor_status, axis=1),
+            hide_index=True, use_container_width=True, height=min(400, 40 + n_alerta * 36)
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Seção vermelha ───────────────────────────────────────────────────
+    cor_verm = CORES_KPI["MANUTENCAO"]["border"]
+    st.markdown(
+        f"<div style='border-left:6px solid {cor_verm};padding:10px 18px;"
+        f"background:rgba(255,61,0,0.12);border-radius:0 8px 8px 0;margin-bottom:12px;'>"
+        f"<span style='color:{cor_verm};font-weight:800;font-size:1rem;text-transform:uppercase;letter-spacing:1px;'>"
+        f"🚨 SEM ESTOQUE — ITENS ZERADOS (saldo 0)</span>"
+        f"<span style='color:#aaa;font-size:0.8rem;margin-left:12px;'>{n_zerado} itens</span></div>",
+        unsafe_allow_html=True
+    )
+    if df_zerado.empty:
+        st.info("Nenhum item zerado. ✅")
+    else:
+        colunas_show = [c for c in df_zerado.columns if not c.startswith("_")]
+        st.dataframe(
+            df_zerado[colunas_show].style.apply(aplicar_cor_status, axis=1),
+            hide_index=True, use_container_width=True, height=min(500, 40 + n_zerado * 36)
+        )
 
 
 # =====================================================
@@ -1316,6 +1433,11 @@ def main():
         """, unsafe_allow_html=True)
         st.stop()
 
+    # ── Preview do relatório (ocupa tela inteira) ──────────────────────
+    if st.session_state.get("_relatorio_preview"):
+        mostrar_preview_relatorio(df_base)
+        st.stop()
+
     df_filtrado = df_base.copy()
     df_filtrado["SALDO TOTAL"] = pd.to_numeric(df_filtrado["SALDO TOTAL"], errors="coerce").fillna(0)
 
@@ -1327,7 +1449,7 @@ def main():
     criar_kpis(df_filtrado)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Modo fullscreen KPI — idêntico à Torre ──────────────────────────
+    # ── Modo fullscreen KPI ──────────────────────────────────────────────
     kpi_map = [
         ("TOTAL",       CORES_KPI["TOTAL"]["border"],      "_kpi_df_TOTAL"),
         ("DISPONIVEIS", CORES_KPI["DISPONIVEIS"]["border"], "_kpi_df_DISPONIVEIS"),
@@ -1340,7 +1462,6 @@ def main():
         if (st.session_state.get(key_sel) or st.session_state.get(key_aberto)) and df_key in st.session_state:
             mostrar_detalhes_kpi(nome, cor, st.session_state[df_key])
             st.stop()
-    # ────────────────────────────────────────────────────────────────────
 
     # ── Prepara dados de posição ─────────────────────────────────────────
     posicao_df = pd.DataFrame()
@@ -1391,7 +1512,6 @@ def main():
                 )
             return "<br>".join(partes)
 
-        # ── Mesmo padrão da Torre: try/except para compatibilidade pandas 2.x / 1.x ──
         try:
             itens_info_map = df_pos.groupby("POSIÇÃO").apply(
                 _itens_info, include_groups=False
@@ -1415,7 +1535,6 @@ def main():
     if st.session_state.get("_grafico_fs"):
         mostrar_grafico_fullscreen(st.session_state["_grafico_fs"], df_filtrado, posicao_df)
         st.stop()
-    # ────────────────────────────────────────────────────────────────────
 
     col1, col2 = st.columns(2)
     with col1:
