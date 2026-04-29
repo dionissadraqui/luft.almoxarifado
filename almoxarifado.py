@@ -3,6 +3,8 @@ import plotly.graph_objects as go
 import streamlit as st
 import base64
 import unicodedata
+import re
+import time
 
 #  >    executar  >   python -m streamlit run almoxarifado.py
 
@@ -70,7 +72,56 @@ st.set_page_config(
 )
 
 
-def get_base64_image(image_path):
+# =====================================================
+# UTILITÁRIOS DE COR — com validação robusta
+# =====================================================
+
+_HEX_PATTERN = re.compile(r'^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
+
+def _validar_hex(hex_color: str) -> str:
+    if not hex_color or not isinstance(hex_color, str):
+        return "#888888"
+    s = hex_color.strip()
+    if not s.startswith('#'):
+        s = '#' + s
+    if _HEX_PATTERN.match(s):
+        h = s.lstrip('#')
+        if len(h) == 3:
+            h = ''.join(c * 2 for c in h)
+        return '#' + h.upper()
+    return "#888888"
+
+
+def _hex_to_rgba(hex_color: str, alpha: float = 0.12) -> str:
+    try:
+        clean = _validar_hex(hex_color).lstrip('#')
+        r = int(clean[0:2], 16)
+        g = int(clean[2:4], 16)
+        b = int(clean[4:6], 16)
+        a = max(0.0, min(1.0, float(alpha)))
+        return f"rgba({r},{g},{b},{a})"
+    except Exception:
+        return f"rgba(136,136,136,{alpha})"
+
+
+def _cor_saldo(saldo) -> str:
+    try:
+        s = float(saldo)
+        if s == 0:
+            return CORES_KPI["MANUTENCAO"]["border"]
+        elif s <= 3:
+            return CORES_KPI["OPERACAO"]["border"]
+        else:
+            return CORES_KPI["DISPONIVEIS"]["border"]
+    except Exception:
+        return "#888888"
+
+
+# =====================================================
+# IMAGENS
+# =====================================================
+
+def get_base64_image(image_path: str) -> str | None:
     try:
         with open(image_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode()
@@ -78,7 +129,16 @@ def get_base64_image(image_path):
         return None
 
 
+# =====================================================
+# LOADING SCREEN
+# Garante tempo mínimo de exibição via session_state.
+# show_loading_screen  → injeta HTML e registra o horário de início
+# hide_loading_screen  → aguarda o tempo mínimo e remove o placeholder
+# =====================================================
+LOADING_MIN_SEGUNDOS = 5  # tempo mínimo que a tela de loading fica visível
+
 def show_loading_screen(placeholder):
+    """Injeta a tela de loading e registra o timestamp de início."""
     img_base64 = get_base64_image("luft.png")
     if img_base64:
         loading_html = f"""
@@ -121,14 +181,39 @@ def show_loading_screen(placeholder):
         </style>
         <div class="loading-overlay"><div class="loading-text">📦 CARREGANDO DADOS...</div></div>
         """
-    placeholder.markdown(loading_html, unsafe_allow_html=True)
+    try:
+        placeholder.markdown(loading_html, unsafe_allow_html=True)
+        # Registra o momento em que o loading foi exibido
+        st.session_state["_loading_start_time"] = time.time()
+    except Exception:
+        pass
+
+
+def hide_loading_screen(placeholder):
+    """Aguarda o tempo mínimo de loading antes de remover a tela."""
+    try:
+        inicio = st.session_state.get("_loading_start_time")
+        if inicio is not None:
+            decorrido = time.time() - inicio
+            restante  = LOADING_MIN_SEGUNDOS - decorrido
+            if restante > 0:
+                time.sleep(restante)
+            # Limpa o timestamp para não afetar próximas chamadas
+            st.session_state.pop("_loading_start_time", None)
+        placeholder.empty()
+    except Exception:
+        try:
+            placeholder.empty()
+        except Exception:
+            pass
 
 
 # =====================================================
 # CSS CUSTOMIZADO
 # =====================================================
 def load_custom_css():
-    st.markdown(f"""
+    try:
+        st.markdown(f"""
     <style>
     * {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important; }}
     header[data-testid="stHeader"] {{ background-color: rgba(0,0,0,0) !important; backdrop-filter: none !important; }}
@@ -186,7 +271,6 @@ def load_custom_css():
     .kpi-vermelho .kpi-label {{ color: {CORES_KPI["MANUTENCAO"]["text"]}; text-shadow: 0 0 10px {CORES_KPI["MANUTENCAO"]["shadow"]}; }}
     .kpi-vermelho .kpi-value {{ color: {CORES_KPI["MANUTENCAO"]["text"]}; text-shadow: 0 0 18px {CORES_KPI["MANUTENCAO"]["shadow"]}; }}
 
-    /* ====== DIALOG — estilos base ====== */
     div[role="dialog"] > div {{
         max-width: 92vw !important; width: 92vw !important; max-height: 90vh !important;
         padding: clamp(16px, 3vw, 36px) clamp(14px, 3vw, 40px) !important;
@@ -242,7 +326,6 @@ def load_custom_css():
         box-shadow: 0 0 18px rgba(198,40,40,0.75) !important;
     }}
 
-    /* ====== MINI CARDS ====== */
     .mini-card-item {{
         border-radius: 10px; padding: clamp(8px, 1.5vw, 14px) clamp(8px, 1.5vw, 12px);
         margin-bottom: 0; box-sizing: border-box; width: 100%;
@@ -265,13 +348,11 @@ def load_custom_css():
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; margin-top: 2px;
     }}
 
-    /* ====== CARD COMPLETO ====== */
     .card-info-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 155px), 1fr)); gap: 8px; }}
     .card-info-item {{ display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 7px; min-width: 0; word-break: break-word; }}
     .card-info-label {{ font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.9px; font-weight: 700; opacity: 0.85; }}
     .card-info-value {{ color: #ffffff !important; font-size: 0.9rem; font-weight: 600; line-height: 1.3; }}
 
-    /* ====== MEDIA QUERIES ====== */
     @media (min-width: 1400px) {{ div[role="dialog"] > div {{ padding: 36px 48px !important; }} }}
     @media (max-width: 900px) {{
         [data-testid="stDialog"] > div, div[role="dialog"] > div {{
@@ -300,7 +381,6 @@ def load_custom_css():
     }}
     .btn-voltar button:hover {{ background-color: #cc0000 !important; border: 1px solid #ffffff !important; box-shadow: 0 0 12px #ffffff, 0 0 24px rgba(255,0,0,0.8) !important; color: white !important; }}
 
-    /* ====== BOTÃO FULLSCREEN ====== */
     .btn-fullscreen button {{
         background-color: transparent !important; color: rgba(255,255,255,0.45) !important;
         border: 1px solid rgba(255,255,255,0.18) !important; border-radius: 6px !important;
@@ -397,6 +477,8 @@ def load_custom_css():
     hr {{ border-color: {CORES_INTERFACE["painel_border"]} !important; }}
     </style>
     """, unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"Aviso: Erro ao carregar estilos CSS ({e}). A interface pode parecer diferente.")
 
 
 # =====================================================
@@ -411,12 +493,14 @@ ORDEM_STATUS = STATUS_OFICIAIS + STATUS_ADICIONAIS
 # PROCESSAMENTO DE DADOS
 # =====================================================
 
-def _sem_acento(texto):
-    """Remove acentos de uma string para comparação flexível."""
-    return unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
+def _sem_acento(texto: str) -> str:
+    try:
+        return unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('ASCII')
+    except Exception:
+        return str(texto)
 
 
-def _normalizar_nomes_colunas(df):
+def _normalizar_nomes_colunas(df: pd.DataFrame) -> pd.DataFrame:
     MAPA = {
         "CODIGO":            "CÓDIGO",
         "DESCRICAO":         "DESCRIÇÃO",
@@ -428,33 +512,43 @@ def _normalizar_nomes_colunas(df):
         "SAIDA":             "SAIDA",
         "STATUS":            "STATUS",
     }
-    renomear = {}
-    for col in df.columns:
-        chave = _sem_acento(col).strip().upper()
-        chave = ' '.join(chave.split())
-        oficial = MAPA.get(chave)
-        if oficial and col != oficial:
-            renomear[col] = oficial
-    if renomear:
-        df = df.rename(columns=renomear)
-    return df
-
-
-def _renomear_colunas_duplicadas(df):
-    cols = pd.Series(df.columns)
-    for dup in cols[cols.duplicated()].unique():
-        dup_indices = [i for i, x in enumerate(cols) if x == dup]
-        for idx, pos in enumerate(dup_indices):
-            if idx > 0:
-                cols[pos] = f"{dup}_{idx}"
-    df.columns = cols
-    return df
-
-
-@st.cache_data
-def load_data_from_file(file_source):
     try:
-        df = pd.read_excel(file_source, sheet_name=0)
+        renomear = {}
+        for col in df.columns:
+            chave = _sem_acento(col).strip().upper()
+            chave = ' '.join(chave.split())
+            oficial = MAPA.get(chave)
+            if oficial and col != oficial:
+                renomear[col] = oficial
+        if renomear:
+            df = df.rename(columns=renomear)
+    except Exception as e:
+        st.warning(f"Aviso ao normalizar colunas: {e}")
+    return df
+
+
+def _renomear_colunas_duplicadas(df: pd.DataFrame) -> pd.DataFrame:
+    try:
+        cols = pd.Series(df.columns)
+        for dup in cols[cols.duplicated()].unique():
+            dup_indices = [i for i, x in enumerate(cols) if x == dup]
+            for idx, pos in enumerate(dup_indices):
+                if idx > 0:
+                    cols[pos] = f"{dup}_{idx}"
+        df.columns = cols
+    except Exception as e:
+        st.warning(f"Aviso ao renomear colunas duplicadas: {e}")
+    return df
+
+
+# =====================================================
+# CACHE POR BYTES
+# =====================================================
+@st.cache_data(show_spinner=False)
+def load_data_from_bytes(file_bytes: bytes) -> pd.DataFrame:
+    import io
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
 
         if df.empty:
             st.error("❌ A planilha está vazia!")
@@ -487,37 +581,52 @@ def load_data_from_file(file_source):
         colunas_texto = ["STATUS", "CÓDIGO", "DESCRIÇÃO", "POSIÇÃO"]
         for col in colunas_texto:
             if col in df.columns:
-                df[col] = (
-                    df[col].astype(str)
-                    .str.strip()
-                    .str.upper()
-                    .str.replace(r'\s+', ' ', regex=True)
-                )
-                df[col] = df[col].where(
-                    ~df[col].isin(["NAN", "NONE", "NAT", ""]),
-                    other=pd.NA
-                )
+                try:
+                    df[col] = (
+                        df[col].astype(str)
+                        .str.strip()
+                        .str.upper()
+                        .str.replace(r'\s+', ' ', regex=True)
+                    )
+                    df[col] = df[col].where(
+                        ~df[col].isin(["NAN", "NONE", "NAT", ""]),
+                        other=pd.NA
+                    )
+                except Exception:
+                    pass
 
         for col in ["ENTRADA", "SAIDA", "SALDO TOTAL"]:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                except Exception:
+                    df[col] = 0
 
         if "SALDO TOTAL" not in df.columns:
             for alias in ["SALDO", "QUANTIDADE"]:
                 if alias in df.columns:
-                    df["SALDO TOTAL"] = pd.to_numeric(df[alias], errors='coerce').fillna(0)
+                    try:
+                        df["SALDO TOTAL"] = pd.to_numeric(df[alias], errors='coerce').fillna(0)
+                    except Exception:
+                        df["SALDO TOTAL"] = 0
                     break
             else:
                 df["SALDO TOTAL"] = 0
 
         if "VALORES UNITÁRIOS" in df.columns:
-            df["VALORES UNITÁRIOS"] = (
-                df["VALORES UNITÁRIOS"].astype(str).str.replace(',', '.', regex=False)
-            )
-            df["VALORES UNITÁRIOS"] = pd.to_numeric(df["VALORES UNITÁRIOS"], errors='coerce')
+            try:
+                df["VALORES UNITÁRIOS"] = (
+                    df["VALORES UNITÁRIOS"].astype(str).str.replace(',', '.', regex=False)
+                )
+                df["VALORES UNITÁRIOS"] = pd.to_numeric(df["VALORES UNITÁRIOS"], errors='coerce')
+            except Exception:
+                df["VALORES UNITÁRIOS"] = 0.0
 
         if "VALOR TOTAL" in df.columns:
-            df["VALOR TOTAL"] = pd.to_numeric(df["VALOR TOTAL"], errors='coerce').fillna(0)
+            try:
+                df["VALOR TOTAL"] = pd.to_numeric(df["VALOR TOTAL"], errors='coerce').fillna(0)
+            except Exception:
+                df["VALOR TOTAL"] = 0.0
 
         if "STATUS" in df.columns:
             df["STATUS"] = df["STATUS"].fillna("ESTOQUE").astype(str).str.upper()
@@ -531,259 +640,242 @@ def load_data_from_file(file_source):
         return pd.DataFrame()
 
 
-def _cor_saldo(saldo):
-    try:
-        s = float(saldo)
-        if s == 0:
-            return CORES_KPI["MANUTENCAO"]["border"]
-        elif s <= 3:
-            return CORES_KPI["OPERACAO"]["border"]
-        else:
-            return CORES_KPI["DISPONIVEIS"]["border"]
-    except Exception:
-        return "#888888"
-
-
 def aplicar_cor_status(row):
-    saldo = row.get("SALDO TOTAL", 0)
     try:
-        s = float(saldo)
+        saldo = row.get("SALDO TOTAL", 0)
+        try:
+            s = float(saldo)
+        except Exception:
+            s = 0
+        if s == 0:
+            bg, fg = "#2a0a0a", "#ff3d00"
+        elif s <= 3:
+            bg, fg = "#2a1a00", "#ffb300"
+        else:
+            bg, fg = "#0a1f0a", "#00e676"
+        return [f'background-color: {bg}; color: {fg}'] * len(row)
     except Exception:
-        s = 0
-    if s == 0:
-        bg, fg = "#2a0a0a", "#ff3d00"
-    elif s <= 3:
-        bg, fg = "#2a1a00", "#ffb300"
-    else:
-        bg, fg = "#0a1f0a", "#00e676"
-    return [f'background-color: {bg}; color: {fg}'] * len(row)
+        return [''] * len(row)
 
 
 # =====================================================
 # GRÁFICOS
 # =====================================================
 
-def criar_grafico_status(df_filtrado):
-    df = df_filtrado.copy()
-    zerados = df[df["SALDO TOTAL"] == 0][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
-    alertas = df[(df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
-    zerados["CATEGORIA"] = "SEM ESTOQUE"
-    alertas["CATEGORIA"] = "ALERTA"
-    combined = pd.concat([alertas, zerados], ignore_index=True)
-
-    if combined.empty:
-        fig = go.Figure()
-        fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=320,
-            annotations=[dict(
-                text="✅ Nenhum alerta ou item zerado",
-                x=0.5, y=0.5, xref="paper", yref="paper",
-                showarrow=False, font=dict(color="#00e676", size=16, family="Arial Black")
-            )]
-        )
-        return fig
-
-    labels = combined.apply(
-        lambda r: (str(r["DESCRIÇÃO"])[:28] + "…") if len(str(r["DESCRIÇÃO"])) > 30 else str(r["DESCRIÇÃO"]),
-        axis=1
-    ).tolist()
-    saldos = combined["SALDO TOTAL"].fillna(0).tolist()
-    cores = [
-        CORES_KPI["MANUTENCAO"]["border"] if cat == "SEM ESTOQUE" else CORES_KPI["OPERACAO"]["border"]
-        for cat in combined["CATEGORIA"]
-    ]
-
+def _figura_vazia(mensagem: str, cor: str = "#00e676", altura: int = 320) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=labels, x=saldos, orientation='h',
-        marker=dict(color=cores, line=dict(color='rgba(255,255,255,0.15)', width=1)),
-        text=[str(int(s)) for s in saldos], textposition='outside',
-        textfont=dict(color='#ffffff', size=14, family='Arial Black'),
-        hovertemplate='<b>%{y}</b><br>Saldo: %{x}<extra></extra>',
-        showlegend=False
-    ))
-    altura = max(320, len(combined) * 28 + 60)
     fig.update_layout(
-        hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
-                        font=dict(size=14, color='#ffffff', family='Arial Black'), namelength=-1),
-        height=altura, margin=dict(l=0, r=60, t=10, b=0),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#f5f5f5', size=13),
-        xaxis=dict(showgrid=True, gridcolor=CORES_INTERFACE["grid"],
-                   tickfont=dict(size=13, color=CORES_INTERFACE["texto_secundario"])),
-        yaxis=dict(showgrid=False, tickfont=dict(size=11, color='#f5f5f5', family='Arial Black'),
-                   automargin=True)
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=altura,
+        annotations=[dict(
+            text=mensagem, x=0.5, y=0.5, xref="paper", yref="paper",
+            showarrow=False, font=dict(color=cor, size=16, family="Arial Black")
+        )]
     )
     return fig
 
 
-def criar_grafico_itens(df_filtrado, fullscreen=False):
-    df = df_filtrado.copy()
-    df["SALDO TOTAL"] = pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
-    df_zerado = df[df["SALDO TOTAL"] == 0].copy()
+def criar_grafico_status(df_filtrado: pd.DataFrame) -> go.Figure:
+    try:
+        df = df_filtrado.copy()
+        df["SALDO TOTAL"] = pd.to_numeric(df.get("SALDO TOTAL", 0), errors="coerce").fillna(0)
 
-    if df_zerado.empty:
+        zerados = df[df["SALDO TOTAL"] == 0][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
+        alertas = df[(df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)][["CÓDIGO", "DESCRIÇÃO", "SALDO TOTAL"]].copy()
+        zerados["CATEGORIA"] = "SEM ESTOQUE"
+        alertas["CATEGORIA"] = "ALERTA"
+        combined = pd.concat([alertas, zerados], ignore_index=True)
+
+        if combined.empty:
+            return _figura_vazia("✅ Nenhum alerta ou item zerado", "#00e676", 320)
+
+        labels = combined.apply(
+            lambda r: (str(r["DESCRIÇÃO"])[:28] + "…") if len(str(r.get("DESCRIÇÃO", ""))) > 30
+            else str(r.get("DESCRIÇÃO", "—")),
+            axis=1
+        ).tolist()
+        saldos = combined["SALDO TOTAL"].fillna(0).tolist()
+        cores  = [
+            CORES_KPI["MANUTENCAO"]["border"] if cat == "SEM ESTOQUE"
+            else CORES_KPI["OPERACAO"]["border"]
+            for cat in combined["CATEGORIA"]
+        ]
+
         fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=labels, x=saldos, orientation='h',
+            marker=dict(color=cores, line=dict(color='rgba(255,255,255,0.15)', width=1)),
+            text=[str(int(s)) for s in saldos], textposition='outside',
+            textfont=dict(color='#ffffff', size=14, family='Arial Black'),
+            hovertemplate='<b>%{y}</b><br>Saldo: %{x}<extra></extra>',
+            showlegend=False
+        ))
+        altura = max(320, len(combined) * 28 + 60)
         fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=420,
-            annotations=[dict(
-                text="✅ Nenhum item sem estoque",
-                x=0.5, y=0.5, xref="paper", yref="paper",
-                showarrow=False, font=dict(color="#00e676", size=16, family="Arial Black")
-            )]
+            hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
+                            font=dict(size=14, color='#ffffff', family='Arial Black'), namelength=-1),
+            height=altura, margin=dict(l=0, r=60, t=10, b=0),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#f5f5f5', size=13),
+            xaxis=dict(showgrid=True, gridcolor=CORES_INTERFACE["grid"],
+                       tickfont=dict(size=13, color=CORES_INTERFACE["texto_secundario"])),
+            yaxis=dict(showgrid=False, tickfont=dict(size=11, color='#f5f5f5', family='Arial Black'),
+                       automargin=True)
         )
         return fig
-
-    tem_unit = "VALORES UNITÁRIOS" in df_zerado.columns
-    tem_vt   = "VALOR TOTAL" in df_zerado.columns
-    if tem_unit:
-        df_zerado["_VU"] = pd.to_numeric(df_zerado["VALORES UNITÁRIOS"], errors="coerce").fillna(0)
-    elif tem_vt:
-        df_zerado["_VU"] = pd.to_numeric(df_zerado["VALOR TOTAL"], errors="coerce").fillna(0)
-    else:
-        df_zerado["_VU"] = 0.0
-
-    df_zerado = df_zerado.sort_values("_VU", ascending=False).reset_index(drop=True)
-
-    def _fmt_valor(v):
-        try:
-            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:
-            return "R$ 0,00"
-
-    cor_vermelho = CORES_KPI["MANUTENCAO"]["border"]
-    labels  = df_zerado["DESCRIÇÃO"].apply(lambda x: (str(x)[:28] + "…") if len(str(x)) > 30 else str(x)).tolist()
-    valores = df_zerado["_VU"].tolist()
-    textos  = [_fmt_valor(v) for v in valores]
-
-    ordem   = sorted(range(len(valores)), key=lambda i: valores[i], reverse=True)
-    labels  = [labels[i]  for i in ordem]
-    valores = [valores[i] for i in ordem]
-    textos  = [textos[i]  for i in ordem]
-
-    fig = go.Figure(data=[go.Bar(
-        x=labels, y=valores,
-        marker=dict(color=cor_vermelho, line=dict(color="rgba(255,255,255,0.20)", width=1)),
-        text=textos, textposition="outside",
-        textfont=dict(color="#ffffff", size=16, family="Arial Black"),
-        hovertemplate="<b>%{x}</b><br>Valor unitário: %{text}<extra></extra>",
-        showlegend=False, cliponaxis=False,
-    )])
-
-    n       = len(df_zerado)
-    altura  = 680 if fullscreen else max(480, n * 30 + 220)
-    val_max = max(valores) if valores else 1
-    y_max   = val_max * 1.30 if val_max > 0 else 10
-
-    fig.update_layout(
-        hoverlabel=dict(bgcolor="#1e1e1e", bordercolor=cor_vermelho,
-                        font=dict(size=13, color="#ffffff", family="Arial Black"), namelength=-1),
-        height=altura, margin=dict(l=10, r=10, t=80, b=200),
-        paper_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
-        plot_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
-        font=dict(color="#f5f5f5", size=13), bargap=0.25,
-        xaxis=dict(tickangle=-50, tickfont=dict(size=10, family="Arial Black", color="#f5f5f5"),
-                   automargin=True, showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor=CORES_INTERFACE["grid"],
-                   tickfont=dict(size=12, color=CORES_INTERFACE["texto_secundario"]),
-                   tickprefix="R$ ", range=[0, y_max]),
-    )
-    return fig
+    except Exception as e:
+        return _figura_vazia(f"⚠️ Erro ao gerar gráfico: {e}", "#ffb300", 320)
 
 
-def criar_grafico_posicao(posicao_df, fullscreen=False):
-    if posicao_df.empty:
-        return go.Figure()
-
-    df_plot    = posicao_df if fullscreen else posicao_df.head(10)
-    cor_zerado = CORES_KPI["MANUTENCAO"]["border"]
-    tem_saldo  = "SALDO_TOTAL" in df_plot.columns
-    cores = [
-        cor_zerado if (tem_saldo and df_plot.iloc[i].get("SALDO_TOTAL", 1) == 0)
-        else CORES_POSICAO[i % len(CORES_POSICAO)]
-        for i in range(len(df_plot))
-    ]
-
-    def _fmt(v):
-        try:
-            return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:
-            return "R$ 0,00"
-
-    tem_extra      = "SALDO_TOTAL" in df_plot.columns and "VALOR_TOTAL" in df_plot.columns
-    tem_itens_info = "ITENS_INFO" in df_plot.columns
-    hover_texts    = []
-    for _, r in df_plot.iterrows():
-        saldo       = int(r.get("SALDO_TOTAL", 0)) if tem_extra else int(r["QUANTIDADE"])
-        valor_total = _fmt(r.get("VALOR_TOTAL", 0)) if tem_extra else "—"
-        txt = f"<b>Posição: {r['POSIÇÃO']}</b><br>─────────────────────"
-        if tem_itens_info and str(r.get("ITENS_INFO", "")).strip():
-            txt += f"<br>{r['ITENS_INFO']}"
-        else:
-            txt += f"<br>Qtd. em estoque: {saldo}<br>Valor total: {valor_total}"
-        hover_texts.append(txt)
-
-    tem_saldo_col = "SALDO_TOTAL" in df_plot.columns
-    if tem_saldo_col:
-        textos_fatia = df_plot["SALDO_TOTAL"].fillna(0).astype(int).apply(
-            lambda v: str(v) if v > 0 else "0"
-        ).tolist()
-    else:
-        textos_fatia = df_plot["QUANTIDADE"].astype(str).tolist()
-
-    fig = go.Figure(data=[go.Pie(
-        labels=df_plot["POSIÇÃO"], values=df_plot["QUANTIDADE"],
-        hole=0.62, marker=dict(colors=cores, line=dict(color='#0a0a0a', width=2)),
-        textinfo='none', text=hover_texts, customdata=textos_fatia,
-        texttemplate='%{customdata}',
-        textfont=dict(color='#ffffff', size=18, family='Arial Black'),
-        hovertemplate='%{text}<extra></extra>'
-    )])
-
-    if fullscreen:
-        fig.update_layout(
-            hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
-                            font=dict(size=18, color='#ffffff', family='Arial Black'), namelength=-1),
-            height=720, margin=dict(l=10, r=220, t=20, b=20),
-            paper_bgcolor='#141414', plot_bgcolor='#141414', showlegend=True,
-            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.01,
-                        font=dict(color='#f5f5f5', size=16, family='Arial Black'), bgcolor='rgba(0,0,0,0)')
-        )
-    else:
-        fig.update_layout(
-            hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
-                            font=dict(size=18, color='#ffffff', family='Arial Black'), namelength=-1),
-            height=320, margin=dict(l=0, r=0, t=0, b=0),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True,
-            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02,
-                        font=dict(color='#f5f5f5', size=14, family='Arial Black'), bgcolor='rgba(0,0,0,0)')
-        )
-    return fig
-
-
-# =====================================================
-# HELPERS
-# =====================================================
-
-def _hex_to_rgba(hex_color, alpha=0.12):
-    h = hex_color.lstrip('#')
-    r, g, b = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-    return f"rgba({r},{g},{b},{alpha})"
-
-
-def _html_mini_card(item, cor_override=None):
-    status    = str(item.get("STATUS", "")).strip()
-    codigo    = str(item.get("CÓDIGO", "—")).strip()
-    descricao = str(item.get("DESCRIÇÃO", "—")).strip()[:50]
-    saldo     = item.get("SALDO TOTAL", 0)
-    cor_item  = cor_override if cor_override else _cor_saldo(saldo)
-    cor_fundo = _hex_to_rgba(cor_item, 0.22)
-    cor_borda = _hex_to_rgba(cor_item, 0.70)
+def criar_grafico_itens(df_filtrado: pd.DataFrame, fullscreen: bool = False) -> go.Figure:
     try:
-        saldo_str = str(int(float(saldo)))
-    except Exception:
-        saldo_str = "—"
-    return f"""
+        df = df_filtrado.copy()
+
+        if "SAIDA" not in df.columns:
+            return _figura_vazia("⚠️ Coluna 'SAIDA' não encontrada na planilha", "#ffb300", 420)
+
+        df["SAIDA"] = pd.to_numeric(df["SAIDA"], errors="coerce").fillna(0)
+        df_saida = df[df["SAIDA"] >= 1].copy()
+
+        if df_saida.empty:
+            return _figura_vazia("✅ Nenhuma saída registrada", "#00e676", 420)
+
+        df_saida = df_saida.sort_values("SAIDA", ascending=False).reset_index(drop=True)
+
+        cor_barra = CORES_KPI["OPERACAO"]["border"]
+        labels  = df_saida["DESCRIÇÃO"].apply(
+            lambda x: (str(x)[:28] + "…") if len(str(x)) > 30 else str(x)
+        ).tolist()
+        valores = df_saida["SAIDA"].tolist()
+        textos  = [str(int(v)) for v in valores]
+
+        fig = go.Figure(data=[go.Bar(
+            x=labels, y=valores,
+            marker=dict(color=cor_barra, line=dict(color="rgba(255,255,255,0.20)", width=1)),
+            text=textos, textposition="outside",
+            textfont=dict(color="#ffffff", size=16, family="Arial Black"),
+            hovertemplate="<b>%{x}</b><br>Saída: %{y}<extra></extra>",
+            showlegend=False, cliponaxis=False,
+        )])
+
+        n      = len(df_saida)
+        altura = 680 if fullscreen else max(480, n * 30 + 220)
+        val_max = max(valores) if valores else 1
+        y_max   = val_max * 1.30 if val_max > 0 else 10
+
+        fig.update_layout(
+            hoverlabel=dict(bgcolor="#1e1e1e", bordercolor=cor_barra,
+                            font=dict(size=13, color="#ffffff", family="Arial Black"), namelength=-1),
+            height=altura,
+            margin=dict(l=10, r=10, t=80, b=200),
+            paper_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
+            plot_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
+            font=dict(color="#f5f5f5", size=13),
+            bargap=0.25,
+            xaxis=dict(tickangle=-50, tickfont=dict(size=10, family="Arial Black", color="#f5f5f5"),
+                       automargin=True, showgrid=False),
+            yaxis=dict(showgrid=True, gridcolor=CORES_INTERFACE["grid"],
+                       tickfont=dict(size=12, color=CORES_INTERFACE["texto_secundario"]),
+                       range=[0, y_max]),
+        )
+        return fig
+    except Exception as e:
+        return _figura_vazia(f"⚠️ Erro ao gerar gráfico: {e}", "#ffb300", 420)
+
+
+def criar_grafico_posicao(posicao_df: pd.DataFrame, fullscreen: bool = False) -> go.Figure:
+    try:
+        if posicao_df.empty:
+            return _figura_vazia("⚠️ Nenhuma posição disponível", "#ffb300", 320)
+
+        df_plot    = posicao_df if fullscreen else posicao_df.head(10)
+        cor_zerado = CORES_KPI["MANUTENCAO"]["border"]
+        tem_saldo  = "SALDO_TOTAL" in df_plot.columns
+        cores = [
+            cor_zerado if (tem_saldo and df_plot.iloc[i].get("SALDO_TOTAL", 1) == 0)
+            else CORES_POSICAO[i % len(CORES_POSICAO)]
+            for i in range(len(df_plot))
+        ]
+
+        def _fmt(v):
+            try:
+                return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return "R$ 0,00"
+
+        tem_extra      = "SALDO_TOTAL" in df_plot.columns and "VALOR_TOTAL" in df_plot.columns
+        tem_itens_info = "ITENS_INFO" in df_plot.columns
+        hover_texts    = []
+        for _, r in df_plot.iterrows():
+            try:
+                saldo       = int(r.get("SALDO_TOTAL", 0)) if tem_extra else int(r.get("QUANTIDADE", 0))
+                valor_total = _fmt(r.get("VALOR_TOTAL", 0)) if tem_extra else "—"
+                txt = f"<b>Posição: {r['POSIÇÃO']}</b><br>─────────────────────"
+                if tem_itens_info and str(r.get("ITENS_INFO", "")).strip():
+                    txt += f"<br>{r['ITENS_INFO']}"
+                else:
+                    txt += f"<br>Qtd. em estoque: {saldo}<br>Valor total: {valor_total}"
+            except Exception:
+                txt = f"<b>Posição: {r.get('POSIÇÃO','—')}</b>"
+            hover_texts.append(txt)
+
+        tem_saldo_col = "SALDO_TOTAL" in df_plot.columns
+        if tem_saldo_col:
+            textos_fatia = df_plot["SALDO_TOTAL"].fillna(0).astype(int).apply(
+                lambda v: str(v) if v > 0 else "0"
+            ).tolist()
+        else:
+            textos_fatia = df_plot["QUANTIDADE"].astype(str).tolist()
+
+        fig = go.Figure(data=[go.Pie(
+            labels=df_plot["POSIÇÃO"], values=df_plot["QUANTIDADE"],
+            hole=0.62, marker=dict(colors=cores, line=dict(color='#0a0a0a', width=2)),
+            textinfo='none', text=hover_texts, customdata=textos_fatia,
+            texttemplate='%{customdata}',
+            textfont=dict(color='#ffffff', size=18, family='Arial Black'),
+            hovertemplate='%{text}<extra></extra>'
+        )])
+
+        if fullscreen:
+            fig.update_layout(
+                hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
+                                font=dict(size=18, color='#ffffff', family='Arial Black'), namelength=-1),
+                height=720, margin=dict(l=10, r=220, t=20, b=20),
+                paper_bgcolor='#141414', plot_bgcolor='#141414', showlegend=True,
+                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.01,
+                            font=dict(color='#f5f5f5', size=16, family='Arial Black'), bgcolor='rgba(0,0,0,0)')
+            )
+        else:
+            fig.update_layout(
+                hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
+                                font=dict(size=18, color='#ffffff', family='Arial Black'), namelength=-1),
+                height=320, margin=dict(l=0, r=0, t=0, b=0),
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True,
+                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02,
+                            font=dict(color='#f5f5f5', size=14, family='Arial Black'), bgcolor='rgba(0,0,0,0)')
+            )
+        return fig
+    except Exception as e:
+        return _figura_vazia(f"⚠️ Erro ao gerar gráfico de posição: {e}", "#ffb300", 320)
+
+
+# =====================================================
+# HELPERS DE HTML
+# =====================================================
+
+def _html_mini_card(item, cor_override: str | None = None) -> str:
+    try:
+        status    = str(item.get("STATUS", "")).strip()
+        codigo    = str(item.get("CÓDIGO", "—")).strip()
+        descricao = str(item.get("DESCRIÇÃO", "—")).strip()[:50]
+        saldo     = item.get("SALDO TOTAL", 0)
+        cor_item  = _validar_hex(cor_override if cor_override else _cor_saldo(saldo))
+        cor_fundo = _hex_to_rgba(cor_item, 0.22)
+        cor_borda = _hex_to_rgba(cor_item, 0.70)
+        try:
+            saldo_str = str(int(float(saldo)))
+        except Exception:
+            saldo_str = "—"
+        return f"""
     <div class="mini-card-item" style="background:{cor_fundo};border:2px solid {cor_borda};border-left:5px solid {cor_item};box-shadow: 0 0 10px {_hex_to_rgba(cor_item, 0.18)};">
         <span class="mini-card-codigo" style="color:{cor_item};text-shadow:0 0 10px {_hex_to_rgba(cor_item, 0.5)};">📦 {codigo}</span>
         <span class="mini-card-descricao" style="color:#e0e0e0;">{descricao}</span>
@@ -791,50 +883,57 @@ def _html_mini_card(item, cor_override=None):
         <span class="mini-card-saldo">📊 Saldo: <b style="color:{cor_item};">{saldo_str}</b></span>
     </div>
     """
+    except Exception as e:
+        return f'<div style="color:#ff3d00;padding:8px;">Erro ao renderizar card: {e}</div>'
 
 
-def _html_card_completo(item, cor_override=None):
-    status    = str(item.get("STATUS", "")).strip()
-    codigo    = str(item.get("CÓDIGO", "—")).strip()
-    descricao = str(item.get("DESCRIÇÃO", "—")).strip()
+def _html_card_completo(item, cor_override: str | None = None) -> str:
+    try:
+        status    = str(item.get("STATUS", "")).strip()
+        codigo    = str(item.get("CÓDIGO", "—")).strip()
+        descricao = str(item.get("DESCRIÇÃO", "—")).strip()
 
-    cor_status = cor_override if cor_override else CORES_STATUS.get(status, _cor_saldo(item.get("SALDO TOTAL", 0)))
-    cor_fundo  = _hex_to_rgba(cor_status, 0.28)
-    cor_borda  = _hex_to_rgba(cor_status, 0.80)
-    cor_ib     = _hex_to_rgba(cor_status, 0.12)
-    cor_ib2    = _hex_to_rgba(cor_status, 0.35)
+        cor_status = _validar_hex(
+            cor_override if cor_override
+            else CORES_STATUS.get(status, _cor_saldo(item.get("SALDO TOTAL", 0)))
+        )
+        cor_fundo = _hex_to_rgba(cor_status, 0.28)
+        cor_borda = _hex_to_rgba(cor_status, 0.80)
+        cor_ib    = _hex_to_rgba(cor_status, 0.12)
+        cor_ib2   = _hex_to_rgba(cor_status, 0.35)
 
-    campos_cabecalho  = {"CÓDIGO", "DESCRIÇÃO", "STATUS"}
-    campos_prioridade = ["POSIÇÃO", "ENTRADA", "SAIDA", "SALDO TOTAL", "VALORES UNITÁRIOS", "VALOR TOTAL"]
-    todos_campos      = list(item.index)
-    campos_extras     = [c for c in todos_campos if c not in campos_cabecalho and c not in campos_prioridade]
-    ordem_final       = campos_prioridade + campos_extras
+        campos_cabecalho  = {"CÓDIGO", "DESCRIÇÃO", "STATUS"}
+        campos_prioridade = ["POSIÇÃO", "ENTRADA", "SAIDA", "SALDO TOTAL", "VALORES UNITÁRIOS", "VALOR TOTAL"]
+        todos_campos      = list(item.index)
+        campos_extras     = [c for c in todos_campos if c not in campos_cabecalho and c not in campos_prioridade]
+        ordem_final       = campos_prioridade + campos_extras
 
-    def _valor_valido(val):
-        if val is None:
-            return False
-        try:
-            if pd.isna(val):
+        def _valor_valido(val):
+            if val is None:
                 return False
-        except (TypeError, ValueError):
-            pass
-        s = str(val).strip().upper()
-        return s not in ("", "NAN", "NONE", "NAT", "UNNAMED")
+            try:
+                if pd.isna(val):
+                    return False
+            except (TypeError, ValueError):
+                pass
+            s = str(val).strip().upper()
+            return s not in ("", "NAN", "NONE", "NAT", "UNNAMED")
 
-    info_items = ""
-    for campo in ordem_final:
-        val = item.get(campo)
-        if not _valor_valido(val):
-            continue
-        val_str = str(val).strip()
-        try:
-            f = float(val_str)
-            if f == int(f):
-                val_str = str(int(f))
-        except (ValueError, TypeError):
-            pass
-        label = str(campo).replace("_", " ").title()
-        info_items += f"""
+        info_items = ""
+        for campo in ordem_final:
+            try:
+                val = item.get(campo)
+                if not _valor_valido(val):
+                    continue
+                val_str = str(val).strip()
+                try:
+                    f = float(val_str)
+                    if f == int(f):
+                        val_str = str(int(f))
+                except (ValueError, TypeError):
+                    pass
+                label = str(campo).replace("_", " ").title()
+                info_items += f"""
         <div style="display:flex; flex-direction:column; gap:6px; padding:16px 18px;
                     border-radius:10px; background:{cor_ib}; border:1px solid {cor_ib2};
                     min-width:0; word-break:break-word;">
@@ -842,11 +941,13 @@ def _html_card_completo(item, cor_override=None):
                          font-weight:700; color:{cor_status}; opacity:0.9;">{label}</span>
             <span style="color:#ffffff; font-size:1.15rem; font-weight:600; line-height:1.3;">{val_str}</span>
         </div>"""
+            except Exception:
+                continue
 
-    divider  = f'<hr style="border:none; border-top:1px solid {cor_status}; margin:16px 0 14px 0; opacity:0.4;">' if info_items else ""
-    info_blk = f'<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(clamp(140px, 18vw, 220px), 1fr)); gap:clamp(8px, 1.2vw, 14px);">{info_items}</div>' if info_items else ""
+        divider  = f'<hr style="border:none; border-top:1px solid {cor_status}; margin:16px 0 14px 0; opacity:0.4;">' if info_items else ""
+        info_blk = f'<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(clamp(140px, 18vw, 220px), 1fr)); gap:clamp(8px, 1.2vw, 14px);">{info_items}</div>' if info_items else ""
 
-    return f"""
+        return f"""
     <div style="border-radius:14px; padding:30px 28px; margin-bottom:14px; box-sizing:border-box; width:100%;
         background:{cor_fundo}; border:2px solid {cor_borda}; border-left:8px solid {cor_status};
         box-shadow:0 0 24px {_hex_to_rgba(cor_status, 0.30)}, 0 4px 20px rgba(0,0,0,0.5);">
@@ -865,140 +966,158 @@ def _html_card_completo(item, cor_override=None):
         {divider}
         {info_blk}
     </div>"""
+    except Exception as e:
+        return f'<div style="color:#ff3d00;padding:16px;border:1px solid #ff3d00;border-radius:8px;">Erro ao renderizar card completo: {e}</div>'
 
 
 # =====================================================
 # INTERFACE
 # =====================================================
 
-def criar_header(pct_disponiveis=0.0):
-    logo_base64 = get_base64_image("logo_luft.png")
-    if logo_base64:
-        logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo" alt="Logo">'
-    else:
-        logo_html = '<div class="header-logo-placeholder">📦 ALMOXARIFADO</div>'
-    st.markdown(f"""
+def criar_header(pct_disponiveis: float = 0.0):
+    try:
+        logo_base64 = get_base64_image("logo_luft.png")
+        if logo_base64:
+            logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo" alt="Logo">'
+        else:
+            logo_html = '<div class="header-logo-placeholder">📦 ALMOXARIFADO</div>'
+        st.markdown(f"""
     <div class="main-header">
         <div class="sirene-container"><div class="sirene-beam"></div><div class="sirene-light"></div><div class="sirene-base"></div></div>
         <div class="header-center">{logo_html}</div>
         <div class="mini-disponibilidade"><div class="mini-label">DISPONÍVEIS</div><div class="mini-valor">{pct_disponiveis:.1f}%</div></div>
     </div>
     """, unsafe_allow_html=True)
+    except Exception as e:
+        st.markdown(f"## 📦 ALMOXARIFADO — Disponíveis: {pct_disponiveis:.1f}%")
 
 
-def criar_kpis(df_filtrado):
-    df_filtrado = df_filtrado.copy()
-    df_filtrado["SALDO TOTAL"] = pd.to_numeric(df_filtrado["SALDO TOTAL"], errors="coerce").fillna(0)
+def criar_kpis(df_filtrado: pd.DataFrame):
+    try:
+        df_filtrado = df_filtrado.copy()
+        df_filtrado["SALDO TOTAL"] = pd.to_numeric(df_filtrado["SALDO TOTAL"], errors="coerce").fillna(0)
 
-    total       = len(df_filtrado)
-    disponiveis = len(df_filtrado[df_filtrado["SALDO TOTAL"] > 3])
-    alerta      = len(df_filtrado[(df_filtrado["SALDO TOTAL"] > 0) & (df_filtrado["SALDO TOTAL"] <= 3)])
-    zerados     = len(df_filtrado[df_filtrado["SALDO TOTAL"] == 0])
+        total       = len(df_filtrado)
+        disponiveis = len(df_filtrado[df_filtrado["SALDO TOTAL"] > 3])
+        alerta      = len(df_filtrado[(df_filtrado["SALDO TOTAL"] > 0) & (df_filtrado["SALDO TOTAL"] <= 3)])
+        zerados     = len(df_filtrado[df_filtrado["SALDO TOTAL"] == 0])
 
-    st.session_state["_kpi_df_TOTAL"]       = df_filtrado
-    st.session_state["_kpi_df_DISPONIVEIS"] = df_filtrado[df_filtrado["SALDO TOTAL"] > 3].copy()
-    st.session_state["_kpi_df_ALERTA"]      = df_filtrado[(df_filtrado["SALDO TOTAL"] > 0) & (df_filtrado["SALDO TOTAL"] <= 3)].copy()
-    st.session_state["_kpi_df_ZERADOS"]     = df_filtrado[df_filtrado["SALDO TOTAL"] == 0].copy()
+        st.session_state["_kpi_df_TOTAL"]       = df_filtrado
+        st.session_state["_kpi_df_DISPONIVEIS"] = df_filtrado[df_filtrado["SALDO TOTAL"] > 3].copy()
+        st.session_state["_kpi_df_ALERTA"]      = df_filtrado[(df_filtrado["SALDO TOTAL"] > 0) & (df_filtrado["SALDO TOTAL"] <= 3)].copy()
+        st.session_state["_kpi_df_ZERADOS"]     = df_filtrado[df_filtrado["SALDO TOTAL"] == 0].copy()
 
-    col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
-        st.markdown(f'<div class="kpi-card kpi-azul"><div class="kpi-label">TOTAL DE ITENS</div><div class="kpi-value">{total}</div></div>', unsafe_allow_html=True)
-        if st.button("🔍 VER TODOS", key="btn_total", use_container_width=True):
-            for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-            st.session_state["_kpi_aberto_TOTAL"] = True
-            st.rerun()
+        with col1:
+            st.markdown(f'<div class="kpi-card kpi-azul"><div class="kpi-label">TOTAL DE ITENS</div><div class="kpi-value">{total}</div></div>', unsafe_allow_html=True)
+            if st.button("🔍 VER TODOS", key="btn_total", use_container_width=True):
+                _fechar_todos_kpi()
+                st.session_state["_kpi_aberto_TOTAL"] = True
+                st.rerun()
 
-    with col2:
-        st.markdown(f'<div class="kpi-card kpi-verde"><div class="kpi-label">DISPONÍVEIS</div><div class="kpi-value">{disponiveis}</div></div>', unsafe_allow_html=True)
-        if st.button("🔍 VER DISPONÍVEIS", key="btn_disp", use_container_width=True):
-            for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-            st.session_state["_kpi_aberto_DISPONIVEIS"] = True
-            st.rerun()
+        with col2:
+            st.markdown(f'<div class="kpi-card kpi-verde"><div class="kpi-label">DISPONÍVEIS</div><div class="kpi-value">{disponiveis}</div></div>', unsafe_allow_html=True)
+            if st.button("🔍 VER DISPONÍVEIS", key="btn_disp", use_container_width=True):
+                _fechar_todos_kpi()
+                st.session_state["_kpi_aberto_DISPONIVEIS"] = True
+                st.rerun()
 
-    with col3:
-        st.markdown(f'<div class="kpi-card kpi-laranja"><div class="kpi-label">ALERTA</div><div class="kpi-value">{alerta}</div></div>', unsafe_allow_html=True)
-        if st.button("🔍 VER ALERTA", key="btn_alerta", use_container_width=True):
-            for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-            st.session_state["_kpi_aberto_ALERTA"] = True
-            st.rerun()
+        with col3:
+            st.markdown(f'<div class="kpi-card kpi-laranja"><div class="kpi-label">ALERTA</div><div class="kpi-value">{alerta}</div></div>', unsafe_allow_html=True)
+            if st.button("🔍 VER ALERTA", key="btn_alerta", use_container_width=True):
+                _fechar_todos_kpi()
+                st.session_state["_kpi_aberto_ALERTA"] = True
+                st.rerun()
 
-    with col4:
-        st.markdown(f'<div class="kpi-card kpi-vermelho"><div class="kpi-label">SEM ESTOQUE</div><div class="kpi-value">{zerados}</div></div>', unsafe_allow_html=True)
-        if st.button("🔍 VER ZERADOS", key="btn_zero", use_container_width=True):
-            for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-            st.session_state["_kpi_aberto_ZERADOS"] = True
-            st.rerun()
+        with col4:
+            st.markdown(f'<div class="kpi-card kpi-vermelho"><div class="kpi-label">SEM ESTOQUE</div><div class="kpi-value">{zerados}</div></div>', unsafe_allow_html=True)
+            if st.button("🔍 VER ZERADOS", key="btn_zero", use_container_width=True):
+                _fechar_todos_kpi()
+                st.session_state["_kpi_aberto_ZERADOS"] = True
+                st.rerun()
 
-    return disponiveis, alerta, zerados
+        return disponiveis, alerta, zerados
+    except Exception as e:
+        st.error(f"Erro ao criar KPIs: {e}")
+        return 0, 0, 0
 
 
-def mostrar_detalhes_kpi(titulo, cor_hex, df_kpi):
-    st.markdown("""
+def _fechar_todos_kpi():
+    for k in list(st.session_state.keys()):
+        if k.startswith("_kpi_aberto_"):
+            st.session_state[k] = False
+        elif k.startswith("_kpi_sel_"):
+            st.session_state[k] = None
+
+
+def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
+    try:
+        cor_hex = _validar_hex(cor_hex)
+
+        st.markdown("""
     <style>
     section[data-testid="stSidebar"] { display: none !important; }
     .main .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
     </style>
     """, unsafe_allow_html=True)
 
-    key_sel    = f"_kpi_sel_{titulo}"
-    key_busca  = f"_kpi_busca_{titulo}"
-    key_aberto = f"_kpi_aberto_{titulo}"
+        key_sel    = f"_kpi_sel_{titulo}"
+        key_busca  = f"_kpi_busca_{titulo}"
+        key_aberto = f"_kpi_aberto_{titulo}"
 
-    if key_sel not in st.session_state:
-        st.session_state[key_sel] = None
-    if key_aberto not in st.session_state:
-        st.session_state[key_aberto] = True
+        if key_sel not in st.session_state:
+            st.session_state[key_sel] = None
+        if key_aberto not in st.session_state:
+            st.session_state[key_aberto] = True
 
-    if st.session_state[key_sel] is not None:
-        codigo_sel = st.session_state[key_sel]
-        resultado  = df_kpi[df_kpi["CÓDIGO"].astype(str).str.strip() == str(codigo_sel).strip()]
+        # ── VIEW: item individual ──────────────────────────────────
+        if st.session_state[key_sel] is not None:
+            codigo_sel = st.session_state[key_sel]
+            try:
+                resultado = df_kpi[df_kpi["CÓDIGO"].astype(str).str.strip() == str(codigo_sel).strip()]
+            except Exception:
+                resultado = pd.DataFrame()
 
-        col1, col2, col3 = st.columns([1, 4, 1])
-        with col1:
-            if st.button("🏠 INÍCIO", key=f"btn_inicio_v_{titulo}", use_container_width=True):
-                for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                    st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-                st.session_state.pop("_grafico_fs", None)
-                st.rerun()
-        with col3:
-            if st.button("← VOLTAR", key=f"btn_voltar_{titulo}", use_container_width=True, type="secondary"):
-                st.session_state[key_sel]    = None
-                st.session_state[key_aberto] = True
-                st.rerun()
-        with col2:
-            st.markdown(f"""
+            col1, col2, col3 = st.columns([1, 4, 1])
+            with col1:
+                if st.button("🏠 INÍCIO", key=f"btn_inicio_v_{titulo}", use_container_width=True):
+                    _fechar_todos_kpi()
+                    st.session_state.pop("_grafico_fs", None)
+                    st.rerun()
+            with col3:
+                if st.button("← VOLTAR", key=f"btn_voltar_{titulo}", use_container_width=True, type="secondary"):
+                    st.session_state[key_sel]    = None
+                    st.session_state[key_aberto] = True
+                    st.rerun()
+            with col2:
+                st.markdown(f"""
             <div style="border-left:4px solid {cor_hex}; padding:8px 16px;
                 background:{_hex_to_rgba(cor_hex, 0.18)}; border-radius:0 8px 8px 0;">
                 <span style="color:#aaa; font-size:0.68rem; letter-spacing:1px; text-transform:uppercase;">ITEM SELECIONADO</span><br>
                 <span style="color:{cor_hex}; font-size:1.25rem; font-weight:900; font-family:monospace; letter-spacing:2px;">{codigo_sel}</span>
             </div>""", unsafe_allow_html=True)
 
-        st.divider()
-        if resultado.empty:
-            st.warning("Item não encontrado.")
-        else:
-            st.markdown(_html_card_completo(resultado.iloc[0], cor_override=cor_hex), unsafe_allow_html=True)
-        return
+            st.divider()
+            if resultado.empty:
+                st.warning("Item não encontrado.")
+            else:
+                st.markdown(_html_card_completo(resultado.iloc[0], cor_override=cor_hex), unsafe_allow_html=True)
+            return
 
-    col_inicio, col_espacador, col_fechar = st.columns([1, 5, 1])
-    with col_inicio:
-        if st.button("🏠 INÍCIO", key=f"btn_inicio_{titulo}", use_container_width=True):
-            for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-            st.session_state.pop("_grafico_fs", None)
-            st.rerun()
-    with col_fechar:
-        if st.button("✕  FECHAR", key=f"btn_fechar_{titulo}", use_container_width=True, type="secondary"):
-            for k in [k for k in st.session_state if k.startswith("_kpi_aberto_") or k.startswith("_kpi_sel_")]:
-                st.session_state[k] = False if k.startswith("_kpi_aberto_") else None
-            st.rerun()
+        # ── VIEW: lista de itens ───────────────────────────────────
+        col_inicio, col_espacador, col_fechar = st.columns([1, 5, 1])
+        with col_inicio:
+            if st.button("🏠 INÍCIO", key=f"btn_inicio_{titulo}", use_container_width=True):
+                _fechar_todos_kpi()
+                st.session_state.pop("_grafico_fs", None)
+                st.rerun()
+        with col_fechar:
+            if st.button("✕  FECHAR", key=f"btn_fechar_{titulo}", use_container_width=True, type="secondary"):
+                _fechar_todos_kpi()
+                st.rerun()
 
-    st.markdown(f"""
+        st.markdown(f"""
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
         border-left:6px solid {cor_hex}; padding:clamp(10px,2vw,18px) clamp(12px,2.5vw,24px);
         background:{_hex_to_rgba(cor_hex, 0.22)}; border-radius:0 10px 10px 0; margin-bottom:20px;">
@@ -1012,121 +1131,141 @@ def mostrar_detalhes_kpi(titulo, cor_hex, df_kpi):
     </div>
     """, unsafe_allow_html=True)
 
-    if df_kpi.empty:
-        st.info("Nenhum item encontrado nesta categoria.")
-        return
+        if df_kpi.empty:
+            st.info("Nenhum item encontrado nesta categoria.")
+            return
 
-    if "STATUS" in df_kpi.columns and df_kpi["STATUS"].nunique() > 1:
-        resumo = df_kpi["STATUS"].value_counts().reset_index()
-        resumo.columns = ["STATUS", "QTD"]
-        cols_r = st.columns(min(len(resumo), 5))
-        for i, (_, row) in enumerate(resumo.iterrows()):
-            cor = CORES_STATUS.get(row["STATUS"], "#888")
-            with cols_r[i % len(cols_r)]:
-                st.markdown(f"""
-                <div style="border:1px solid {cor}; border-radius:8px; padding:10px 12px; text-align:center;
-                    background:{_hex_to_rgba(cor, 0.22)}; margin-bottom:10px;">
-                    <div style="color:{cor}; font-size:1.5rem; font-weight:800;">{row['QTD']}</div>
-                    <div style="color:#bbb; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; line-height:1.4; margin-top:2px;">{row['STATUS']}</div>
-                </div>""", unsafe_allow_html=True)
-        st.divider()
+        try:
+            if "STATUS" in df_kpi.columns and df_kpi["STATUS"].nunique() > 1:
+                resumo = df_kpi["STATUS"].value_counts().reset_index()
+                resumo.columns = ["STATUS", "QTD"]
+                cols_r = st.columns(min(len(resumo), 5))
+                for i, (_, row) in enumerate(resumo.iterrows()):
+                    cor = _validar_hex(CORES_STATUS.get(row["STATUS"], "#888888"))
+                    with cols_r[i % len(cols_r)]:
+                        st.markdown(f"""
+                    <div style="border:1px solid {cor}; border-radius:8px; padding:10px 12px; text-align:center;
+                        background:{_hex_to_rgba(cor, 0.22)}; margin-bottom:10px;">
+                        <div style="color:{cor}; font-size:1.5rem; font-weight:800;">{row['QTD']}</div>
+                        <div style="color:#bbb; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; line-height:1.4; margin-top:2px;">{row['STATUS']}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.divider()
+        except Exception:
+            pass
 
-    busca = st.text_input(
-        "🔍 Busca rápida", placeholder="Código, descrição, posição...",
-        key=key_busca, label_visibility="collapsed"
-    )
+        busca = st.text_input(
+            "🔍 Busca rápida", placeholder="Código, descrição, posição...",
+            key=key_busca, label_visibility="collapsed"
+        )
 
-    df_exibir = df_kpi.copy()
-    if busca.strip():
-        mask = df_exibir.apply(
-            lambda col: col.astype(str).str.upper().str.contains(busca.strip().upper(), na=False)
-        ).any(axis=1)
-        df_exibir = df_exibir[mask]
+        df_exibir = df_kpi.copy()
+        if busca.strip():
+            try:
+                mask = df_exibir.apply(
+                    lambda col: col.astype(str).str.upper().str.contains(busca.strip().upper(), na=False)
+                ).any(axis=1)
+                df_exibir = df_exibir[mask]
+            except Exception:
+                pass
 
-    df_exibir      = df_exibir.reset_index(drop=True)
-    total_exibindo = len(df_exibir)
+        df_exibir      = df_exibir.reset_index(drop=True)
+        total_exibindo = len(df_exibir)
 
-    icone = '🔎' if busca.strip() else '📋'
-    st.markdown(f"""<span style="font-size:1rem; color:#aaaaaa;">
+        icone = '🔎' if busca.strip() else '📋'
+        st.markdown(f"""<span style="font-size:1rem; color:#aaaaaa;">
     {icone} Exibindo <b>{total_exibindo}</b> item(ns) — Clique em <b>▶ ABRIR</b> para ver os detalhes completos
     </span>""", unsafe_allow_html=True)
 
-    if df_exibir.empty:
-        st.warning("Nenhum item corresponde ao filtro.")
-        return
+        if df_exibir.empty:
+            st.warning("Nenhum item corresponde ao filtro.")
+            return
 
-    NUM_COLS = 4
-    for row_start in range(0, total_exibindo, NUM_COLS):
-        cols = st.columns(NUM_COLS)
-        for col_idx in range(NUM_COLS):
-            item_idx = row_start + col_idx
-            if item_idx >= total_exibindo:
-                break
-            item   = df_exibir.iloc[item_idx]
-            codigo = str(item.get("CÓDIGO", "—")).strip()
-            with cols[col_idx]:
-                st.markdown(_html_mini_card(item, cor_override=cor_hex), unsafe_allow_html=True)
-                if st.button("▶ ABRIR", key=f"open_{titulo}_{item_idx}_{codigo}", use_container_width=True):
-                    st.session_state[key_sel] = codigo
-                    st.rerun()
+        NUM_COLS = 4
+        for row_start in range(0, total_exibindo, NUM_COLS):
+            cols = st.columns(NUM_COLS)
+            for col_idx in range(NUM_COLS):
+                item_idx = row_start + col_idx
+                if item_idx >= total_exibindo:
+                    break
+                try:
+                    item   = df_exibir.iloc[item_idx]
+                    codigo = str(item.get("CÓDIGO", "—")).strip()
+                    with cols[col_idx]:
+                        st.markdown(_html_mini_card(item, cor_override=cor_hex), unsafe_allow_html=True)
+                        if st.button("▶ ABRIR", key=f"open_{titulo}_{item_idx}_{codigo}", use_container_width=True):
+                            st.session_state[key_sel] = codigo
+                            st.rerun()
+                except Exception:
+                    continue
+
+    except Exception as e:
+        st.error(f"Erro ao exibir detalhes: {e}")
 
 
 # =====================================================
 # PAINÉIS
 # =====================================================
 
-def criar_painel_status(df_filtrado):
-    df = df_filtrado.copy()
-    df["SALDO TOTAL"] = pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
+def criar_painel_status(df_filtrado: pd.DataFrame):
+    try:
+        df = df_filtrado.copy()
+        df["SALDO TOTAL"] = pd.to_numeric(df["SALDO TOTAL"], errors="coerce").fillna(0)
 
-    tem_unit = "VALORES UNITÁRIOS" in df.columns
-    tem_vt   = "VALOR TOTAL" in df.columns
+        tem_unit = "VALORES UNITÁRIOS" in df.columns
+        tem_vt   = "VALOR TOTAL" in df.columns
 
-    if tem_unit:
-        df["_VU"]      = pd.to_numeric(df["VALORES UNITÁRIOS"], errors="coerce").fillna(0)
-        df["_VT_CALC"] = df["_VU"] * df["SALDO TOTAL"]
-    elif tem_vt:
-        df["_VU"]      = 0.0
-        vt_col         = pd.to_numeric(df["VALOR TOTAL"], errors="coerce").fillna(0)
-        df["_VT_CALC"] = vt_col.where(df["SALDO TOTAL"] > 0, other=0.0)
-    else:
-        df["_VU"]      = 0.0
-        df["_VT_CALC"] = 0.0
+        if tem_unit:
+            df["_VU"]      = pd.to_numeric(df["VALORES UNITÁRIOS"], errors="coerce").fillna(0)
+            df["_VT_CALC"] = df["_VU"] * df["SALDO TOTAL"]
+        elif tem_vt:
+            df["_VU"]      = 0.0
+            vt_col         = pd.to_numeric(df["VALOR TOTAL"], errors="coerce").fillna(0)
+            df["_VT_CALC"] = vt_col.where(df["SALDO TOTAL"] > 0, other=0.0)
+        else:
+            df["_VU"]      = 0.0
+            df["_VT_CALC"] = 0.0
 
-    def _soma(mask, zerado=False):
-        return float(df.loc[mask, "_VU" if zerado else "_VT_CALC"].sum())
+        def _soma(mask, zerado=False):
+            try:
+                return float(df.loc[mask, "_VU" if zerado else "_VT_CALC"].sum())
+            except Exception:
+                return 0.0
 
-    mask_disp   = df["SALDO TOTAL"] > 3
-    mask_alerta = (df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)
-    mask_zerado = df["SALDO TOTAL"] == 0
-    mask_total  = df["SALDO TOTAL"] > 0
+        mask_disp   = df["SALDO TOTAL"] > 3
+        mask_alerta = (df["SALDO TOTAL"] > 0) & (df["SALDO TOTAL"] <= 3)
+        mask_zerado = df["SALDO TOTAL"] == 0
+        mask_total  = df["SALDO TOTAL"] > 0
 
-    vt_total  = _soma(mask_total)
-    vt_disp   = _soma(mask_disp)
-    vt_alerta = _soma(mask_alerta)
-    vt_zerado = _soma(mask_zerado, zerado=True)
+        vt_total  = _soma(mask_total)
+        vt_disp   = _soma(mask_disp)
+        vt_alerta = _soma(mask_alerta)
+        vt_zerado = _soma(mask_zerado, zerado=True)
 
-    def _fmt(v):
-        try:
-            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:
-            return "R$ 0,00"
+        def _fmt(v):
+            try:
+                return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                return "R$ 0,00"
 
-    def _pct(v, total):
-        if total <= 0:
-            return 2
-        return max(2, round((v / total) * 100, 1))
+        def _pct(v, total):
+            try:
+                if total <= 0:
+                    return 2
+                return max(2, round((v / total) * 100, 1))
+            except Exception:
+                return 2
 
-    kpis = [
-        ("TOTAL DE ITENS", _fmt(vt_total),  CORES_KPI["TOTAL"]["border"],      CORES_KPI["TOTAL"]["shadow"],      100),
-        ("DISPONÍVEIS",    _fmt(vt_disp),   CORES_KPI["DISPONIVEIS"]["border"], CORES_KPI["DISPONIVEIS"]["shadow"], _pct(vt_disp,   vt_total)),
-        ("ALERTA",         _fmt(vt_alerta), CORES_KPI["OPERACAO"]["border"],    CORES_KPI["OPERACAO"]["shadow"],    _pct(vt_alerta, vt_total)),
-        ("SEM ESTOQUE",    _fmt(vt_zerado), CORES_KPI["MANUTENCAO"]["border"],  CORES_KPI["MANUTENCAO"]["shadow"],  _pct(vt_zerado, vt_total)),
-    ]
+        kpis = [
+            ("TOTAL DE ITENS", _fmt(vt_total),  CORES_KPI["TOTAL"]["border"],      CORES_KPI["TOTAL"]["shadow"],      100),
+            ("DISPONÍVEIS",    _fmt(vt_disp),   CORES_KPI["DISPONIVEIS"]["border"], CORES_KPI["DISPONIVEIS"]["shadow"], _pct(vt_disp,   vt_total)),
+            ("ALERTA",         _fmt(vt_alerta), CORES_KPI["OPERACAO"]["border"],    CORES_KPI["OPERACAO"]["shadow"],    _pct(vt_alerta, vt_total)),
+            ("SEM ESTOQUE",    _fmt(vt_zerado), CORES_KPI["MANUTENCAO"]["border"],  CORES_KPI["MANUTENCAO"]["shadow"],  _pct(vt_zerado, vt_total)),
+        ]
 
-    rows_html = ""
-    for label, valor, cor, sombra, pct in kpis:
-        rows_html += f'''
+        rows_html = ""
+        for label, valor, cor, sombra, pct in kpis:
+            cor = _validar_hex(cor)
+            rows_html += f'''
         <div style="display:flex;align-items:center;gap:18px;background:rgba(255,255,255,0.04);
             border:1.5px solid {cor};border-left:6px solid {cor};border-radius:10px;
             padding:14px 20px;margin-bottom:10px;
@@ -1148,50 +1287,59 @@ def criar_painel_status(df_filtrado):
             </div>
         </div>'''
 
-    with st.container(border=True):
-        st.markdown('<div class="card-title">💰 VALOR TOTAL POR SITUAÇÃO</div>', unsafe_allow_html=True)
-        st.markdown(rows_html, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="card-title">💰 VALOR TOTAL POR SITUAÇÃO</div>', unsafe_allow_html=True)
+            st.markdown(rows_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Erro ao criar painel de status: {e}")
 
 
-def criar_painel_posicao(posicao_df):
-    with st.container(border=True):
-        col_t, col_b = st.columns([11, 1])
-        with col_t:
-            st.markdown('<div class="card-title">📍 DISTRIBUIÇÃO POR POSIÇÃO</div>', unsafe_allow_html=True)
-        with col_b:
-            st.markdown('<div class="btn-fullscreen">', unsafe_allow_html=True)
-            if st.button("⛶", key="fs_btn_posicao"):
-                st.session_state["_grafico_fs"] = "posicao"
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-        if not posicao_df.empty:
-            st.plotly_chart(criar_grafico_posicao(posicao_df), use_container_width=True, config={'displayModeBar': False})
-        else:
-            st.info("Nenhuma posição cadastrada")
+def criar_painel_posicao(posicao_df: pd.DataFrame):
+    try:
+        with st.container(border=True):
+            col_t, col_b = st.columns([11, 1])
+            with col_t:
+                st.markdown('<div class="card-title">📍 DISTRIBUIÇÃO POR POSIÇÃO</div>', unsafe_allow_html=True)
+            with col_b:
+                st.markdown('<div class="btn-fullscreen">', unsafe_allow_html=True)
+                if st.button("⛶", key="fs_btn_posicao"):
+                    st.session_state["_grafico_fs"] = "posicao"
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            if not posicao_df.empty:
+                st.plotly_chart(criar_grafico_posicao(posicao_df), use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.info("Nenhuma posição cadastrada")
+    except Exception as e:
+        st.error(f"Erro ao criar painel de posição: {e}")
 
 
-def criar_painel_itens(df_filtrado):
-    with st.container(border=True):
-        col_t, col_b = st.columns([11, 1])
-        with col_t:
-            st.markdown('<div class="card-title">🚨 SEM ESTOQUE — VALOR POR CATEGORIA</div>', unsafe_allow_html=True)
-        with col_b:
-            st.markdown('<div class="btn-fullscreen">', unsafe_allow_html=True)
-            if st.button("⛶", key="fs_btn_itens"):
-                st.session_state["_grafico_fs"] = "itens"
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-        st.plotly_chart(criar_grafico_itens(df_filtrado), use_container_width=True, config={'displayModeBar': False})
+def criar_painel_itens(df_filtrado: pd.DataFrame):
+    try:
+        with st.container(border=True):
+            col_t, col_b = st.columns([11, 1])
+            with col_t:
+                st.markdown('<div class="card-title">📦 PEÇAS COM MAIS SAÍDA</div>', unsafe_allow_html=True)
+            with col_b:
+                st.markdown('<div class="btn-fullscreen">', unsafe_allow_html=True)
+                if st.button("⛶", key="fs_btn_itens"):
+                    st.session_state["_grafico_fs"] = "itens"
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            st.plotly_chart(criar_grafico_itens(df_filtrado), use_container_width=True, config={'displayModeBar': False})
+    except Exception as e:
+        st.error(f"Erro ao criar painel de itens: {e}")
 
 
-def mostrar_grafico_fullscreen(grafico_id, df_filtrado, posicao_df):
-    titulos = {
-        "posicao": "📍 DISTRIBUIÇÃO POR POSIÇÃO",
-        "itens":   "🚨 SEM ESTOQUE — VALOR POR CATEGORIA",
-    }
-    titulo = titulos.get(grafico_id, "")
+def mostrar_grafico_fullscreen(grafico_id: str, df_filtrado: pd.DataFrame, posicao_df: pd.DataFrame):
+    try:
+        titulos = {
+            "posicao": "📍 DISTRIBUIÇÃO POR POSIÇÃO",
+            "itens":   "📦 PEÇAS COM MAIS SAÍDA",
+        }
+        titulo = titulos.get(grafico_id, "")
 
-    st.markdown("""
+        st.markdown("""
     <style>
     section[data-testid="stSidebar"] { display: none !important; }
     .stApp { background: #141414 !important; }
@@ -1199,257 +1347,304 @@ def mostrar_grafico_fullscreen(grafico_id, df_filtrado, posicao_df):
     </style>
     """, unsafe_allow_html=True)
 
-    col_titulo, col_fechar = st.columns([10, 2])
-    with col_titulo:
-        st.markdown(f'<div class="card-title" style="font-size:1.3rem;">{titulo}</div>', unsafe_allow_html=True)
-    with col_fechar:
-        if st.button("✕  Fechar", key="fs_fechar", use_container_width=True):
-            st.session_state.pop("_grafico_fs", None)
-            st.rerun()
+        col_titulo, col_fechar = st.columns([10, 2])
+        with col_titulo:
+            st.markdown(f'<div class="card-title" style="font-size:1.3rem;">{titulo}</div>', unsafe_allow_html=True)
+        with col_fechar:
+            if st.button("✕  Fechar", key="fs_fechar", use_container_width=True):
+                st.session_state.pop("_grafico_fs", None)
+                st.rerun()
 
-    st.markdown("<hr style='border-color:#484848;margin:0 0 12px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border-color:#484848;margin:0 0 12px 0;'>", unsafe_allow_html=True)
 
-    if grafico_id == "posicao":
-        fig = criar_grafico_posicao(posicao_df, fullscreen=True)
-    elif grafico_id == "itens":
-        fig = criar_grafico_itens(df_filtrado, fullscreen=True)
-    else:
-        st.stop()
+        if grafico_id == "posicao":
+            fig = criar_grafico_posicao(posicao_df, fullscreen=True)
+        elif grafico_id == "itens":
+            fig = criar_grafico_itens(df_filtrado, fullscreen=True)
+        else:
+            st.warning("Gráfico não reconhecido.")
+            return
 
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
+    except Exception as e:
+        st.error(f"Erro ao exibir gráfico em tela cheia: {e}")
 
 
 # =====================================================
 # SIDEBAR
+# Lógica de loading com tempo mínimo garantido:
+# 1. Novo arquivo → salva bytes, mostra loading, processa, aguarda 5s, remove loading
+# 2. Reruns subsequentes → dados já no session_state, sem loading
 # =====================================================
-def criar_sidebar(loading_placeholder):
-    with st.sidebar:
-        st.header("🎛️ FILTROS DO ALMOXARIFADO")
-        st.divider()
+def criar_sidebar(loading_placeholder) -> pd.DataFrame:
+    try:
+        with st.sidebar:
+            st.header("🎛️ FILTROS DO ALMOXARIFADO")
+            st.divider()
 
-        uploaded_file = st.file_uploader(
-            "📁 CARREGAR ARQUIVO", type=['xlsx', 'xls'],
-            label_visibility="visible"
-        )
+            uploaded_file = st.file_uploader(
+                "📁 CARREGAR ARQUIVO", type=['xlsx', 'xls'],
+                label_visibility="visible"
+            )
 
-        df_base = pd.DataFrame()
+            # ── Quando um novo arquivo é carregado, salva os bytes no session_state ──
+            if uploaded_file is not None:
+                file_bytes = uploaded_file.read()
+                # Só reprocessa se for um arquivo diferente do que já está em cache
+                if st.session_state.get("_file_bytes") != file_bytes:
+                    st.session_state["_file_bytes"]    = file_bytes
+                    st.session_state["_df_base"]       = None   # força reload
+                    st.session_state["_loading_done"]  = False  # novo arquivo → precisa de loading
 
-        if uploaded_file is not None:
-            show_loading_screen(loading_placeholder)
-            df_base = load_data_from_file(uploaded_file)
-            loading_placeholder.empty()
-            if not df_base.empty:
-                st.success(f"✅ {len(df_base)} itens carregados!")
-             
+            # ── Carrega os dados usando bytes (cache por hash dos bytes) ──
+            df_base = pd.DataFrame()
+            if st.session_state.get("_file_bytes") is not None:
 
-                # ── Seção de relatório ────────────────────────────────────
-                st.divider()
-                st.markdown(
-                    "<div style='color:#ffb300;font-weight:800;font-size:0.8rem;"
-                    "text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;'>"
-                    "📊 RELATÓRIO DE ALERTAS</div>",
-                    unsafe_allow_html=True
-                )
+                # Primeira carga do arquivo atual — exibe loading e processa
+                if st.session_state.get("_df_base") is None:
+                    # Mostra a tela de loading (registra timestamp internamente)
+                    show_loading_screen(loading_placeholder)
 
-                df_tmp = df_base.copy()
-                df_tmp["SALDO TOTAL"] = pd.to_numeric(
-                    df_tmp.get("SALDO TOTAL", 0), errors="coerce"
-                ).fillna(0)
-                df_alerta = df_tmp[
-                    (df_tmp["SALDO TOTAL"] > 0) & (df_tmp["SALDO TOTAL"] <= 3)
-                ].copy()
-                df_zerado = df_tmp[df_tmp["SALDO TOTAL"] == 0].copy()
+                    # Processa os dados (pode ser rápido se já estiver em cache do st.cache_data)
+                    df_base = load_data_from_bytes(st.session_state["_file_bytes"])
+                    st.session_state["_df_base"] = df_base
 
-                n_alerta = len(df_alerta)
-                n_zerado = len(df_zerado)
+                    # Aguarda o tempo mínimo e remove o loading
+                    hide_loading_screen(loading_placeholder)
 
-                st.markdown(
-                    f"<div style='font-size:0.72rem;color:#aaa;margin-bottom:8px;'>"
-                    f"🟠 Alerta: <b style='color:#ffb300;'>{n_alerta}</b> itens &nbsp;|&nbsp; "
-                    f"🔴 Zerados: <b style='color:#ff3d00;'>{n_zerado}</b> itens</div>",
-                    unsafe_allow_html=True
-                )
-
-                # Botão visualizar (abre preview na tela principal)
-                if st.button(
-                    "👁️ VISUALIZAR RELATÓRIO",
-                    key="btn_preview_relatorio",
-                    use_container_width=True
-                ):
-                    st.session_state["_relatorio_preview"] = True
-                    st.rerun()
-
-                # Botão baixar
-                if n_alerta > 0 or n_zerado > 0:
-                    try:
-                        from gerar_relatorio import gerar_bytes_relatorio
-                        rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
-                        st.download_button(
-                            label="⬇️ BAIXAR RELATÓRIO (.pdf)",
-                            data=rel_bytes,
-                            file_name="relatorio_alertas_almoxarifado.pdf",
-                            mime="application/pdf",
-                            key="btn_download_relatorio",
-                            use_container_width=True
-                        )
-                    except Exception as e:
-                        st.error(f"Erro ao gerar relatório: {e}")
                 else:
-                    st.info("✅ Nenhum alerta ou item zerado para exportar.")
-        else:
-            st.info("⬆️ Faça upload da planilha")
+                    # Dados já carregados — retorna instantaneamente sem loading
+                    df_base = st.session_state["_df_base"]
 
-        return df_base
+                if not df_base.empty:
+                    st.success(f"✅ {len(df_base)} itens carregados!")
+
+                    st.divider()
+                    st.markdown(
+                        "<div style='color:#ffb300;font-weight:800;font-size:0.8rem;"
+                        "text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;'>"
+                        "📊 RELATÓRIO DE ALERTAS</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    try:
+                        df_tmp = df_base.copy()
+                        df_tmp["SALDO TOTAL"] = pd.to_numeric(
+                            df_tmp.get("SALDO TOTAL", 0), errors="coerce"
+                        ).fillna(0)
+                        df_alerta = df_tmp[
+                            (df_tmp["SALDO TOTAL"] > 0) & (df_tmp["SALDO TOTAL"] <= 3)
+                        ].copy()
+                        df_zerado = df_tmp[df_tmp["SALDO TOTAL"] == 0].copy()
+
+                        n_alerta = len(df_alerta)
+                        n_zerado = len(df_zerado)
+
+                        st.markdown(
+                            f"<div style='font-size:0.72rem;color:#aaa;margin-bottom:8px;'>"
+                            f"🟠 Alerta: <b style='color:#ffb300;'>{n_alerta}</b> itens &nbsp;|&nbsp; "
+                            f"🔴 Zerados: <b style='color:#ff3d00;'>{n_zerado}</b> itens</div>",
+                            unsafe_allow_html=True
+                        )
+
+                        if st.button("👁️ VISUALIZAR RELATÓRIO", key="btn_preview_relatorio", use_container_width=True):
+                            st.session_state["_relatorio_preview"] = True
+                            st.rerun()
+
+                        if n_alerta > 0 or n_zerado > 0:
+                            try:
+                                from gerar_relatorio import gerar_bytes_relatorio
+                                rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
+                                st.download_button(
+                                    label="⬇️ BAIXAR RELATÓRIO (.pdf)",
+                                    data=rel_bytes,
+                                    file_name="relatorio_alertas_almoxarifado.pdf",
+                                    mime="application/pdf",
+                                    key="btn_download_relatorio",
+                                    use_container_width=True
+                                )
+                            except ImportError:
+                                pass
+                            except Exception as e:
+                                st.error(f"Erro ao gerar relatório: {e}")
+                        else:
+                            st.info("✅ Nenhum alerta ou item zerado para exportar.")
+                    except Exception as e:
+                        st.warning(f"Aviso na seção de relatório: {e}")
+
+                    st.divider()
+                    # Botão atualizar — limpa cache e session_state
+                    if st.button("🔄 ATUALIZAR DADOS AGORA", use_container_width=True):
+                        st.cache_data.clear()
+                        st.session_state["_df_base"]      = None
+                        st.session_state["_file_bytes"]   = None
+                        st.session_state["_loading_done"] = False
+                        st.rerun()
+            else:
+                st.info("⬆️ Faça upload da planilha")
+
+            return df_base
+    except Exception as e:
+        st.error(f"Erro na sidebar: {e}")
+        return pd.DataFrame()
 
 
 # =====================================================
-# PREVIEW DO RELATÓRIO (tela principal)
+# PREVIEW DO RELATÓRIO
 # =====================================================
-def mostrar_preview_relatorio(df_base):
-    """Exibe preview formatado dos itens de alerta e zerados na tela principal."""
-    st.markdown("""
+def mostrar_preview_relatorio(df_base: pd.DataFrame):
+    try:
+        st.markdown("""
     <style>
     section[data-testid="stSidebar"] { display: none !important; }
     .main .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
     </style>
     """, unsafe_allow_html=True)
 
-    df_tmp = df_base.copy()
-    df_tmp["SALDO TOTAL"] = pd.to_numeric(df_tmp.get("SALDO TOTAL", 0), errors="coerce").fillna(0)
-    df_alerta = df_tmp[(df_tmp["SALDO TOTAL"] > 0) & (df_tmp["SALDO TOTAL"] <= 3)].copy()
-    df_zerado = df_tmp[df_tmp["SALDO TOTAL"] == 0].copy()
+        df_tmp = df_base.copy()
+        df_tmp["SALDO TOTAL"] = pd.to_numeric(df_tmp.get("SALDO TOTAL", 0), errors="coerce").fillna(0)
+        df_alerta = df_tmp[(df_tmp["SALDO TOTAL"] > 0) & (df_tmp["SALDO TOTAL"] <= 3)].copy()
+        df_zerado = df_tmp[df_tmp["SALDO TOTAL"] == 0].copy()
 
-    # Ordena por saldo total decrescente
-    if not df_alerta.empty:
-        df_alerta = df_alerta.sort_values("SALDO TOTAL", ascending=False)
-    if not df_zerado.empty:
-        df_zerado = df_zerado.sort_values("SALDO TOTAL", ascending=False)
+        if not df_alerta.empty:
+            df_alerta = df_alerta.sort_values("SALDO TOTAL", ascending=False)
+        if not df_zerado.empty:
+            df_zerado = df_zerado.sort_values("SALDO TOTAL", ascending=False)
 
-    col_titulo, col_fechar = st.columns([9, 1])
-    with col_titulo:
+        col_titulo, col_fechar = st.columns([9, 1])
+        with col_titulo:
+            st.markdown(
+                "<div class='card-title' style='font-size:1.4rem;'>📊 RELATÓRIO DE ALERTAS — PREVIEW</div>",
+                unsafe_allow_html=True
+            )
+        with col_fechar:
+            if st.button("✕ FECHAR", key="btn_fechar_preview", use_container_width=True):
+                st.session_state.pop("_relatorio_preview", None)
+                st.rerun()
+
+        st.markdown("<hr style='border-color:#484848;margin:4px 0 16px 0;'>", unsafe_allow_html=True)
+
+        n_alerta = len(df_alerta)
+        n_zerado = len(df_zerado)
+        if n_alerta > 0 or n_zerado > 0:
+            try:
+                from gerar_relatorio import gerar_bytes_relatorio
+                rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
+                st.download_button(
+                    label="⬇️ BAIXAR RELATÓRIO (.pdf)",
+                    data=rel_bytes,
+                    file_name="relatorio_alertas_almoxarifado.pdf",
+                    mime="application/pdf",
+                    key="btn_download_preview_top",
+                    use_container_width=False
+                )
+            except ImportError:
+                pass
+            except Exception as e:
+                st.error(f"Erro ao gerar relatório: {e}")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        cor_lrj = _validar_hex(CORES_KPI["OPERACAO"]["border"])
         st.markdown(
-            "<div class='card-title' style='font-size:1.4rem;'>📊 RELATÓRIO DE ALERTAS — PREVIEW</div>",
+            f"<div style='border-left:6px solid {cor_lrj};padding:10px 18px;"
+            f"background:rgba(255,179,0,0.12);border-radius:0 8px 8px 0;margin-bottom:12px;'>"
+            f"<span style='color:{cor_lrj};font-weight:800;font-size:1rem;text-transform:uppercase;letter-spacing:1px;'>"
+            f"⚠️ ALERTA — ESTOQUE BAIXO (saldo 1–3)</span>"
+            f"<span style='color:#aaa;font-size:0.8rem;margin-left:12px;'>{n_alerta} itens</span></div>",
             unsafe_allow_html=True
         )
-    with col_fechar:
-        if st.button("✕ FECHAR", key="btn_fechar_preview", use_container_width=True):
-            st.session_state.pop("_relatorio_preview", None)
-            st.rerun()
-
-    st.markdown("<hr style='border-color:#484848;margin:4px 0 16px 0;'>", unsafe_allow_html=True)
-
-    # Botão de download no topo do preview também
-    n_alerta = len(df_alerta)
-    n_zerado = len(df_zerado)
-    if n_alerta > 0 or n_zerado > 0:
-        try:
-            from gerar_relatorio import gerar_bytes_relatorio
-            rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
-            st.download_button(
-                label="⬇️ BAIXAR RELATÓRIO (.pdf)",
-                data=rel_bytes,
-                file_name="relatorio_alertas_almoxarifado.pdf",
-                mime="application/pdf",
-                key="btn_download_preview_top",
-                use_container_width=False
+        if df_alerta.empty:
+            st.info("Nenhum item em alerta.")
+        else:
+            colunas_show = [c for c in df_alerta.columns if not c.startswith("_")]
+            st.dataframe(
+                df_alerta[colunas_show].style.apply(aplicar_cor_status, axis=1),
+                hide_index=True, use_container_width=True, height=min(400, 40 + n_alerta * 36)
             )
-        except Exception as e:
-            st.error(f"Erro ao gerar relatório: {e}")
 
-    st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Seção laranja ────────────────────────────────────────────────────
-    cor_lrj = CORES_KPI["OPERACAO"]["border"]
-    st.markdown(
-        f"<div style='border-left:6px solid {cor_lrj};padding:10px 18px;"
-        f"background:rgba(255,179,0,0.12);border-radius:0 8px 8px 0;margin-bottom:12px;'>"
-        f"<span style='color:{cor_lrj};font-weight:800;font-size:1rem;text-transform:uppercase;letter-spacing:1px;'>"
-        f"⚠️ ALERTA — ESTOQUE BAIXO (saldo 1–3)</span>"
-        f"<span style='color:#aaa;font-size:0.8rem;margin-left:12px;'>{n_alerta} itens</span></div>",
-        unsafe_allow_html=True
-    )
-    if df_alerta.empty:
-        st.info("Nenhum item em alerta.")
-    else:
-        colunas_show = [c for c in df_alerta.columns if not c.startswith("_")]
-        st.dataframe(
-            df_alerta[colunas_show].style.apply(aplicar_cor_status, axis=1),
-            hide_index=True, use_container_width=True, height=min(400, 40 + n_alerta * 36)
+        cor_verm = _validar_hex(CORES_KPI["MANUTENCAO"]["border"])
+        st.markdown(
+            f"<div style='border-left:6px solid {cor_verm};padding:10px 18px;"
+            f"background:rgba(255,61,0,0.12);border-radius:0 8px 8px 0;margin-bottom:12px;'>"
+            f"<span style='color:{cor_verm};font-weight:800;font-size:1rem;text-transform:uppercase;letter-spacing:1px;'>"
+            f"🚨 SEM ESTOQUE — ITENS ZERADOS (saldo 0)</span>"
+            f"<span style='color:#aaa;font-size:0.8rem;margin-left:12px;'>{n_zerado} itens</span></div>",
+            unsafe_allow_html=True
         )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Seção vermelha ───────────────────────────────────────────────────
-    cor_verm = CORES_KPI["MANUTENCAO"]["border"]
-    st.markdown(
-        f"<div style='border-left:6px solid {cor_verm};padding:10px 18px;"
-        f"background:rgba(255,61,0,0.12);border-radius:0 8px 8px 0;margin-bottom:12px;'>"
-        f"<span style='color:{cor_verm};font-weight:800;font-size:1rem;text-transform:uppercase;letter-spacing:1px;'>"
-        f"🚨 SEM ESTOQUE — ITENS ZERADOS (saldo 0)</span>"
-        f"<span style='color:#aaa;font-size:0.8rem;margin-left:12px;'>{n_zerado} itens</span></div>",
-        unsafe_allow_html=True
-    )
-    if df_zerado.empty:
-        st.info("Nenhum item zerado. ✅")
-    else:
-        colunas_show = [c for c in df_zerado.columns if not c.startswith("_")]
-        st.dataframe(
-            df_zerado[colunas_show].style.apply(aplicar_cor_status, axis=1),
-            hide_index=True, use_container_width=True, height=min(500, 40 + n_zerado * 36)
-        )
+        if df_zerado.empty:
+            st.info("Nenhum item zerado. ✅")
+        else:
+            colunas_show = [c for c in df_zerado.columns if not c.startswith("_")]
+            st.dataframe(
+                df_zerado[colunas_show].style.apply(aplicar_cor_status, axis=1),
+                hide_index=True, use_container_width=True, height=min(500, 40 + n_zerado * 36)
+            )
+    except Exception as e:
+        st.error(f"Erro ao exibir preview do relatório: {e}")
 
 
 # =====================================================
 # MAIN
 # =====================================================
 def main():
-    load_custom_css()
+    try:
+        load_custom_css()
+    except Exception:
+        pass
 
-    st.markdown("""<script>
+    try:
+        st.markdown("""<script>
     (function(){
         var style = document.createElement('style');
         style.textContent = '[class*="TooltipContent"],[class*="tooltip"]{background:#1a1a1a!important;color:#fff!important;border:1px solid #555!important;}[class*="TooltipContent"] *{color:#fff!important;}';
         document.head.appendChild(style);
     })();
     </script>""", unsafe_allow_html=True)
+    except Exception:
+        pass
 
     loading_placeholder = st.empty()
     df_base = criar_sidebar(loading_placeholder)
 
     if df_base.empty:
         st.markdown("""
-        <style>
-        .centered-warning { display: flex; justify-content: center; align-items: center; min-height: 60vh; text-align: center; }
-        .warning-box { background-color: #1e1e1e; border: 2px solid #ff9800; border-radius: 15px; padding: 40px 60px; box-shadow: 0 0 20px rgba(255, 152, 0, 0.3); }
-        .warning-icon { font-size: 4rem; margin-bottom: 20px; }
-        .warning-text { font-size: 1.3rem; color: #ffffff; font-weight: 600; line-height: 1.6; }
-        </style>
-        <div class="centered-warning">
-            <div class="warning-box">
-                <div class="warning-icon">📦</div>
-                <div class="warning-text">Carregue um arquivo Excel na barra lateral<br>para visualizar os dados.</div>
-            </div>
+    <style>
+    .centered-warning { display: flex; justify-content: center; align-items: center; min-height: 60vh; text-align: center; }
+    .warning-box { background-color: #1e1e1e; border: 2px solid #ff9800; border-radius: 15px; padding: 40px 60px; box-shadow: 0 0 20px rgba(255, 152, 0, 0.3); }
+    .warning-icon { font-size: 4rem; margin-bottom: 20px; }
+    .warning-text { font-size: 1.3rem; color: #ffffff; font-weight: 600; line-height: 1.6; }
+    </style>
+    <div class="centered-warning">
+        <div class="warning-box">
+            <div class="warning-icon">📦</div>
+            <div class="warning-text">Carregue um arquivo Excel na barra lateral<br>para visualizar os dados.</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
         st.stop()
 
-    # ── Preview do relatório (ocupa tela inteira) ──────────────────────
     if st.session_state.get("_relatorio_preview"):
         mostrar_preview_relatorio(df_base)
         st.stop()
 
-    df_filtrado = df_base.copy()
-    df_filtrado["SALDO TOTAL"] = pd.to_numeric(df_filtrado["SALDO TOTAL"], errors="coerce").fillna(0)
+    try:
+        df_filtrado = df_base.copy()
+        df_filtrado["SALDO TOTAL"] = pd.to_numeric(df_filtrado["SALDO TOTAL"], errors="coerce").fillna(0)
 
-    total    = len(df_filtrado)
-    zerados  = len(df_filtrado[df_filtrado["SALDO TOTAL"] == 0])
-    pct_disp = ((total - zerados) / total * 100) if total > 0 else 0
+        total    = len(df_filtrado)
+        zerados  = len(df_filtrado[df_filtrado["SALDO TOTAL"] == 0])
+        pct_disp = ((total - zerados) / total * 100) if total > 0 else 0
 
-    criar_header(pct_disp)
-    criar_kpis(df_filtrado)
-    st.markdown("<br>", unsafe_allow_html=True)
+        criar_header(pct_disp)
+        criar_kpis(df_filtrado)
+        st.markdown("<br>", unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Erro ao renderizar KPIs: {e}")
+        st.stop()
 
-    # ── Modo fullscreen KPI ──────────────────────────────────────────────
     kpi_map = [
         ("TOTAL",       CORES_KPI["TOTAL"]["border"],      "_kpi_df_TOTAL"),
         ("DISPONIVEIS", CORES_KPI["DISPONIVEIS"]["border"], "_kpi_df_DISPONIVEIS"),
@@ -1463,106 +1658,122 @@ def main():
             mostrar_detalhes_kpi(nome, cor, st.session_state[df_key])
             st.stop()
 
-    # ── Prepara dados de posição ─────────────────────────────────────────
+    # ── Posição ────────────────────────────────────────────────────
     posicao_df = pd.DataFrame()
-    if "POSIÇÃO" in df_filtrado.columns:
-        df_pos = df_filtrado[
-            df_filtrado["POSIÇÃO"].notna() &
-            (df_filtrado["POSIÇÃO"].astype(str).str.strip() != "")
-        ].copy()
-        df_pos["SALDO TOTAL"] = pd.to_numeric(df_pos["SALDO TOTAL"], errors="coerce").fillna(0)
+    try:
+        if "POSIÇÃO" in df_filtrado.columns:
+            df_pos = df_filtrado[
+                df_filtrado["POSIÇÃO"].notna() &
+                (df_filtrado["POSIÇÃO"].astype(str).str.strip() != "")
+            ].copy()
+            df_pos["SALDO TOTAL"] = pd.to_numeric(df_pos["SALDO TOTAL"], errors="coerce").fillna(0)
 
-        if "VALORES UNITÁRIOS" in df_pos.columns:
-            df_pos["_VT"] = pd.to_numeric(df_pos["VALORES UNITÁRIOS"], errors="coerce").fillna(0) * df_pos["SALDO TOTAL"]
-        elif "VALOR TOTAL" in df_pos.columns:
-            vt = pd.to_numeric(df_pos["VALOR TOTAL"], errors="coerce").fillna(0)
-            df_pos["_VT"] = vt.where(df_pos["SALDO TOTAL"] > 0, other=0.0)
-        else:
-            df_pos["_VT"] = 0.0
+            if "VALORES UNITÁRIOS" in df_pos.columns:
+                df_pos["_VT"] = pd.to_numeric(df_pos["VALORES UNITÁRIOS"], errors="coerce").fillna(0) * df_pos["SALDO TOTAL"]
+            elif "VALOR TOTAL" in df_pos.columns:
+                vt = pd.to_numeric(df_pos["VALOR TOTAL"], errors="coerce").fillna(0)
+                df_pos["_VT"] = vt.where(df_pos["SALDO TOTAL"] > 0, other=0.0)
+            else:
+                df_pos["_VT"] = 0.0
 
-        def _fmt_vu(v):
+            def _fmt_vu(v):
+                try:
+                    return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                except Exception:
+                    return "—"
+
+            tem_desc   = "DESCRIÇÃO" in df_pos.columns
+            tem_vu     = "VALORES UNITÁRIOS" in df_pos.columns
+            tem_vt_col = "VALOR TOTAL" in df_pos.columns
+
+            def _itens_info(grp):
+                partes = []
+                for _, r in grp.iterrows():
+                    try:
+                        saldo = float(r.get("SALDO TOTAL", 0))
+                        desc  = str(r.get("DESCRIÇÃO", "—"))[:40] if tem_desc else "—"
+                        vu    = _fmt_vu(r.get("VALORES UNITÁRIOS", 0)) if tem_vu else "—"
+                        if tem_vu:
+                            vt = float(r.get("VALORES UNITÁRIOS", 0)) * saldo
+                        elif tem_vt_col:
+                            vt = float(r.get("VALOR TOTAL", 0)) if saldo > 0 else 0.0
+                        else:
+                            vt = 0.0
+                        qtd         = int(saldo)
+                        status_icon = "🔴" if qtd == 0 else "📦"
+                        partes.append(
+                            f"{status_icon} Descrição: {desc}<br>"
+                            f"     Quantidade: {qtd}<br>"
+                            f"     Valor unitário: {vu}<br>"
+                            f"     Valor total: {_fmt_vu(vt)}"
+                        )
+                    except Exception:
+                        continue
+                return "<br>".join(partes)
+
             try:
-                return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                itens_info_map = df_pos.groupby("POSIÇÃO").apply(
+                    _itens_info, include_groups=False
+                ).to_dict()
+            except TypeError:
+                itens_info_map = df_pos.groupby("POSIÇÃO").apply(_itens_info).to_dict()
             except Exception:
-                return "—"
+                itens_info_map = {}
 
-        tem_desc   = "DESCRIÇÃO" in df_pos.columns
-        tem_vu     = "VALORES UNITÁRIOS" in df_pos.columns
-        tem_vt_col = "VALOR TOTAL" in df_pos.columns
+            pos_counts = df_pos.groupby("POSIÇÃO").agg(
+                QUANTIDADE=("POSIÇÃO", "count"),
+                SALDO=("SALDO TOTAL", "sum"),
+                VALOR=("_VT", "sum")
+            ).reset_index()
+            pos_counts["ITENS_INFO"] = pos_counts["POSIÇÃO"].map(itens_info_map).fillna("")
+            pos_counts               = pos_counts.sort_values("QUANTIDADE", ascending=False)
 
-        def _itens_info(grp):
-            partes = []
-            for _, r in grp.iterrows():
-                saldo = float(r.get("SALDO TOTAL", 0))
-                desc  = str(r.get("DESCRIÇÃO", "—"))[:40] if tem_desc else "—"
-                vu    = _fmt_vu(r.get("VALORES UNITÁRIOS", 0)) if tem_vu else "—"
-                if tem_vu:
-                    vt = float(r.get("VALORES UNITÁRIOS", 0)) * saldo
-                elif tem_vt_col:
-                    vt = float(r.get("VALOR TOTAL", 0)) if saldo > 0 else 0.0
-                else:
-                    vt = 0.0
-                qtd         = int(saldo)
-                status_icon = "🔴" if qtd == 0 else "📦"
-                partes.append(
-                    f"{status_icon} Descrição: {desc}<br>"
-                    f"     Quantidade: {qtd}<br>"
-                    f"     Valor unitário: {vu}<br>"
-                    f"     Valor total: {_fmt_vu(vt)}"
-                )
-            return "<br>".join(partes)
+            if not pos_counts.empty:
+                posicao_df = pos_counts.rename(columns={"SALDO": "SALDO_TOTAL", "VALOR": "VALOR_TOTAL"})
+                posicao_df["QUANTIDADE"] = posicao_df["QUANTIDADE"].clip(lower=1)
+    except Exception as e:
+        st.warning(f"Aviso ao processar posições: {e}")
 
-        try:
-            itens_info_map = df_pos.groupby("POSIÇÃO").apply(
-                _itens_info, include_groups=False
-            ).to_dict()
-        except TypeError:
-            itens_info_map = df_pos.groupby("POSIÇÃO").apply(_itens_info).to_dict()
-
-        pos_counts = df_pos.groupby("POSIÇÃO").agg(
-            QUANTIDADE=("POSIÇÃO", "count"),
-            SALDO=("SALDO TOTAL", "sum"),
-            VALOR=("_VT", "sum")
-        ).reset_index()
-        pos_counts["ITENS_INFO"] = pos_counts["POSIÇÃO"].map(itens_info_map).fillna("")
-        pos_counts               = pos_counts.sort_values("QUANTIDADE", ascending=False)
-
-        if not pos_counts.empty:
-            posicao_df = pos_counts.rename(columns={"SALDO": "SALDO_TOTAL", "VALOR": "VALOR_TOTAL"})
-            posicao_df["QUANTIDADE"] = posicao_df["QUANTIDADE"].clip(lower=1)
-
-    # ── Modo fullscreen gráfico ──────────────────────────────────────────
     if st.session_state.get("_grafico_fs"):
         mostrar_grafico_fullscreen(st.session_state["_grafico_fs"], df_filtrado, posicao_df)
         st.stop()
 
-    col1, col2 = st.columns(2)
-    with col1:
-        criar_painel_status(df_filtrado)
-    with col2:
-        criar_painel_posicao(posicao_df)
+    try:
+        col1, col2 = st.columns(2)
+        with col1:
+            criar_painel_status(df_filtrado)
+        with col2:
+            criar_painel_posicao(posicao_df)
+    except Exception as e:
+        st.error(f"Erro ao renderizar painéis superiores: {e}")
 
     st.markdown("<br>", unsafe_allow_html=True)
     criar_painel_itens(df_filtrado)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    with st.container(border=True):
-        st.markdown('<div class="card-title">📋 DETALHAMENTO DO ESTOQUE</div>', unsafe_allow_html=True)
-        colunas = ["CÓDIGO", "DESCRIÇÃO", "STATUS"]
-        if "POSIÇÃO" in df_filtrado.columns:
-            colunas.append("POSIÇÃO")
-        colunas += ["ENTRADA", "SAIDA", "SALDO TOTAL"]
-        colunas  = [c for c in colunas if c in df_filtrado.columns]
+    try:
+        with st.container(border=True):
+            st.markdown('<div class="card-title">📋 DETALHAMENTO DO ESTOQUE</div>', unsafe_allow_html=True)
+            colunas = ["CÓDIGO", "DESCRIÇÃO", "STATUS"]
+            if "POSIÇÃO" in df_filtrado.columns:
+                colunas.append("POSIÇÃO")
+            colunas += ["ENTRADA", "SAIDA", "SALDO TOTAL"]
+            colunas  = [c for c in colunas if c in df_filtrado.columns]
 
-        df_display = df_filtrado[colunas].copy()
-        for col in ["ENTRADA", "SAIDA", "SALDO TOTAL"]:
-            if col in df_display.columns:
-                df_display[col] = df_display[col].fillna(0).astype(int)
+            df_display = df_filtrado[colunas].copy()
+            for col in ["ENTRADA", "SAIDA", "SALDO TOTAL"]:
+                if col in df_display.columns:
+                    try:
+                        df_display[col] = df_display[col].fillna(0).astype(int)
+                    except Exception:
+                        df_display[col] = pd.to_numeric(df_display[col], errors="coerce").fillna(0).astype(int)
 
-        st.dataframe(
-            df_display.style.apply(aplicar_cor_status, axis=1),
-            hide_index=True, use_container_width=True, height=400
-        )
+            st.dataframe(
+                df_display.style.apply(aplicar_cor_status, axis=1),
+                hide_index=True, use_container_width=True, height=400
+            )
+    except Exception as e:
+        st.error(f"Erro ao renderizar tabela de detalhamento: {e}")
 
 
 if __name__ == "__main__":
