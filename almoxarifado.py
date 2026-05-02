@@ -1271,7 +1271,7 @@ def criar_painel_status(df_filtrado: pd.DataFrame):
             rows_html += f'''
         <div style="display:flex;align-items:center;gap:18px;background:rgba(255,255,255,0.04);
             border:1.5px solid {cor};border-left:6px solid {cor};border-radius:10px;
-            padding:14px 20px;margin-bottom:10px;
+            padding:26px 20px;margin-bottom:14px;
             box-shadow:0 0 14px {sombra},0 2px 8px rgba(0,0,0,0.4);box-sizing:border-box;">
             <div style="min-width:220px;max-width:220px;">
                 <div style="color:{cor};font-size:0.72rem;font-weight:800;text-transform:uppercase;
@@ -1293,7 +1293,8 @@ def criar_painel_status(df_filtrado: pd.DataFrame):
         with st.container(border=True):
             st.markdown('<div class="card-title">💰 VALOR TOTAL POR SITUAÇÃO</div>', unsafe_allow_html=True)
             st.markdown(
-                f'<div style="height:370px; overflow-y:auto;">{rows_html}</div>',
+                f'<div style="min-height:370px;display:flex;flex-direction:column;justify-content:center;">'
+                f'{rows_html}</div>',
                 unsafe_allow_html=True
             )
     except Exception as e:
