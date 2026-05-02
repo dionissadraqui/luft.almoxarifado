@@ -947,7 +947,9 @@ def _html_card_completo(item, cor_override: str | None = None) -> str:
                 val_str = str(val).strip()
                 try:
                     f = float(val_str)
-                    if f == int(f):
+                    if campo in ("VALORES UNITÁRIOS", "VALOR TOTAL"):
+                        val_str = f"R$ {f:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    elif f == int(f):
                         val_str = str(int(f))
                 except (ValueError, TypeError):
                     pass
@@ -1208,9 +1210,9 @@ def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
                     item   = df_exibir.iloc[item_idx]
                     codigo = str(item.get("CÓDIGO", "—")).strip()
                     with cols[col_idx]:
-                        st.markdown(_html_mini_card(item, cor_override=cor_hex), unsafe_allow_html=True)
+                        cor_card = None if titulo == "TOTAL" else cor_hex
+                        st.markdown(_html_mini_card(item, cor_override=cor_card), unsafe_allow_html=True)
                         if st.button("▶ ABRIR", key=f"open_{titulo}_{item_idx}_{codigo}", use_container_width=True):
-                            st.session_state[key_sel] = codigo
                             st.rerun()
                 except Exception:
                     continue
