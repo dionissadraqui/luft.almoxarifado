@@ -582,19 +582,33 @@ def load_data_from_bytes(file_bytes: bytes) -> pd.DataFrame:
         for col in colunas_texto:
             if col in df.columns:
                 try:
-                    df[col] = (
-                        df[col].astype(str)
-                        .str.strip()
-                        .str.upper()
-                        .str.replace(r'\s+', ' ', regex=True)
-                    )
+                    if col == "CÓDIGO":
+                        df[col] = df[col].apply(
+                            lambda x: str(int(float(x))).zfill(10)
+                            if str(x).strip() not in ('nan', 'None', 'NaN', '')
+                            and str(x).strip().replace('.', '').isdigit()
+                            else str(x).strip().upper()
+                        ).str.strip().str.upper()
+                    elif col == "GRUPO":
+                        df[col] = (
+                            df[col].astype(str)
+                            .str.strip()
+                            .str.upper()
+                            .str.replace(r'\s+', ' ', regex=True)
+                        )
+                    else:
+                        df[col] = (
+                            df[col].astype(str)
+                            .str.strip()
+                            .str.upper()
+                            .str.replace(r'\s+', ' ', regex=True)
+                        )
                     df[col] = df[col].where(
                         ~df[col].isin(["NAN", "NONE", "NAT", ""]),
                         other=pd.NA
                     )
                 except Exception:
                     pass
-
         for col in ["ENTRADA", "SAIDA", "SALDO TOTAL"]:
             if col in df.columns:
                 try:
