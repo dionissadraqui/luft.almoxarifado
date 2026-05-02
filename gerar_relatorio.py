@@ -23,17 +23,18 @@ def _hex(h):
 
 COR_LARANJA       = _hex("FF6B00")
 COR_VERMELHO      = _hex("CC0000")
-COR_LARANJA_FONT  = _hex("FFB300")
-COR_VERMELHO_FONT = _hex("FF3D00")
-COR_BG_PAGE       = _hex("0E0E0E")
+COR_LARANJA_FONT  = _hex("B35900")
+COR_VERMELHO_FONT = _hex("CC0000")
+COR_BG_PAGE       = colors.white
 COR_COL_HEADER    = _hex("2A2A2A")
-COR_ROW_LARANJA   = _hex("2A1800")
-COR_ROW_VERMELHO  = _hex("2A0000")
-COR_ROW_DARK      = _hex("161616")
-COR_SUBTITULO_BG  = _hex("1C1C1C")
-COR_SUBTITULO_TXT = _hex("888888")
-COR_BORDER        = _hex("3A3A3A")
+COR_ROW_LARANJA   = _hex("FFF3E0")
+COR_ROW_VERMELHO  = _hex("FFEBEE")
+COR_ROW_DARK      = _hex("F9F9F9")
+COR_SUBTITULO_BG  = _hex("EEEEEE")
+COR_SUBTITULO_TXT = _hex("444444")
+COR_BORDER        = _hex("CCCCCC")
 BRANCO            = colors.white
+COR_TEXTO         = _hex("1A1A1A")
 
 
 def _fmt(val):
@@ -60,7 +61,7 @@ def _p(txt, size=7, bold=False, color=BRANCO, align=TA_LEFT):
     return Paragraph(str(txt), style)
 
 
-def _secao(df_sec, titulo, cor_header, cor_row, cor_font, col_widths):
+def _secao(df_sec, titulo, cor_header, cor_row, cor_font, col_widths, cor_bolinha=None):
     if df_sec.empty:
         return []
 
@@ -92,17 +93,22 @@ def _secao(df_sec, titulo, cor_header, cor_row, cor_font, col_widths):
     ]))
 
     # ── cabeçalho das colunas ────────────────────────────────────────────
-    header = [_p(c, size=7, bold=True, color=BRANCO, align=TA_CENTER) for c in colunas]
+    dot_w = [4*mm] if cor_bolinha else []
+    col_widths = dot_w + list(col_widths)
+    header = (([_p("", size=7, color=BRANCO, align=TA_CENTER)] if cor_bolinha else []) +
+              [_p(c, size=7, bold=True, color=BRANCO, align=TA_CENTER) for c in colunas])
     rows   = [header]
 
     # ── linhas de dados ──────────────────────────────────────────────────
     for _, row in df.iterrows():
         linha = []
+        if cor_bolinha:
+            linha.append(_p("●", size=9, bold=True, color=cor_bolinha, align=TA_CENTER))
         for c in colunas:
             v   = row.get(c, "")
             txt = _fmt(v)
             al  = TA_CENTER if c in ("SALDO TOTAL", "ENTRADA", "SAIDA") else TA_LEFT
-            linha.append(_p(txt, size=7, color=cor_font, align=al))
+            linha.append(_p(txt, size=7, color=COR_TEXTO, align=al))
         rows.append(linha)
 
     # ── subtotal ─────────────────────────────────────────────────────────
@@ -231,10 +237,12 @@ def gerar_bytes_relatorio(df_alerta, df_zerado, logo_path="logo_luft.png"):
 
     # ── seções ───────────────────────────────────────────────────────────
     story += _secao(df_alerta, "⚠  ALERTA — ESTOQUE BAIXO  (saldo 1–3)",
-                    COR_LARANJA,  COR_ROW_LARANJA,  COR_LARANJA_FONT,  larguras)
+                    COR_LARANJA,  COR_ROW_LARANJA,  COR_LARANJA_FONT,  larguras,
+                    cor_bolinha=COR_LARANJA)
 
     story += _secao(df_zerado, "🚨  SEM ESTOQUE — ITENS ZERADOS  (saldo 0)",
-                    COR_VERMELHO, COR_ROW_VERMELHO, COR_VERMELHO_FONT, larguras)
+                    COR_VERMELHO, COR_ROW_VERMELHO, COR_VERMELHO_FONT, larguras,
+                    cor_bolinha=COR_VERMELHO)
 
     doc.build(story, onFirstPage=fundo, onLaterPages=fundo)
     buf.seek(0)
