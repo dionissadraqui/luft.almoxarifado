@@ -1210,9 +1210,9 @@ def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
                     item   = df_exibir.iloc[item_idx]
                     codigo = str(item.get("CÓDIGO", "—")).strip()
                     with cols[col_idx]:
-                        cor_card = None if titulo == "TOTAL" else cor_hex
-                        st.markdown(_html_mini_card(item, cor_override=cor_card), unsafe_allow_html=True)
+                        st.markdown(_html_mini_card(item, cor_override=cor_hex), unsafe_allow_html=True)
                         if st.button("▶ ABRIR", key=f"open_{titulo}_{item_idx}_{codigo}", use_container_width=True):
+                            st.session_state[key_sel] = codigo
                             st.rerun()
                 except Exception:
                     continue
