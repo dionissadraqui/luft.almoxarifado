@@ -1122,7 +1122,13 @@ def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
             if resultado.empty:
                 st.warning("Item não encontrado.")
             else:
-                st.markdown(_html_card_completo(resultado.iloc[0], cor_override=cor_hex), unsafe_allow_html=True)
+                item_detalhe = resultado.iloc[0]
+                if titulo == "TOTAL":
+                    saldo = item_detalhe.get("SALDO TOTAL", 0)
+                    cor_detalhe = _cor_saldo(saldo)
+                else:
+                    cor_detalhe = cor_hex
+                st.markdown(_html_card_completo(item_detalhe, cor_override=cor_detalhe), unsafe_allow_html=True)
             return
 
         col_inicio, col_espacador, col_fechar = st.columns([1, 5, 1])
