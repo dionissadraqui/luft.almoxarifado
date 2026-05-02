@@ -1292,7 +1292,10 @@ def criar_painel_status(df_filtrado: pd.DataFrame):
 
         with st.container(border=True):
             st.markdown('<div class="card-title">💰 VALOR TOTAL POR SITUAÇÃO</div>', unsafe_allow_html=True)
-            st.markdown(rows_html, unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="height:370px; overflow-y:auto;">{rows_html}</div>',
+                unsafe_allow_html=True
+            )
     except Exception as e:
         st.error(f"Erro ao criar painel de status: {e}")
 
