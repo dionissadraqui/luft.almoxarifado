@@ -1,10 +1,11 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 import base64
 import unicodedata
 import re
-import time
+import json
 
 #  >    executar  >   python -m streamlit run almoxarifado.py
 
@@ -23,7 +24,7 @@ CORES_STATUS = {
 
 CORES_KPI = {
     "TOTAL":      {"border": "#29b6f6", "text": "#29b6f6", "shadow": "rgba(41, 182, 246, 0.75)"},
-    "OPERACAO":   {"border": "#ffb300", "text": "#ffb300", "shadow": "rgba(255, 179, 0, 0.75)"},
+    "OPERACAO":   {"border": "#ffd600", "text": "#ffd600", "shadow": "rgba(255, 214, 0, 0.75)"},
     "DISPONIVEIS":{"border": "#00e676", "text": "#00e676", "shadow": "rgba(0, 230, 118, 0.75)"},
     "MANUTENCAO": {"border": "#ff3d00", "text": "#ff3d00", "shadow": "rgba(255, 61, 0, 0.75)"}
 }
@@ -130,15 +131,10 @@ def get_base64_image(image_path: str) -> str | None:
 
 
 # =====================================================
-# LOADING SCREEN
-# Garante tempo mínimo de exibição via session_state.
-# show_loading_screen  → injeta HTML e registra o horário de início
-# hide_loading_screen  → aguarda o tempo mínimo e remove o placeholder
+# LOADING SCREEN — idêntica ao torre_controle.py
 # =====================================================
-LOADING_MIN_SEGUNDOS = 5  # tempo mínimo que a tela de loading fica visível
 
 def show_loading_screen(placeholder):
-    """Injeta a tela de loading e registra o timestamp de início."""
     img_base64 = get_base64_image("luft.png")
     if img_base64:
         loading_html = f"""
@@ -181,31 +177,11 @@ def show_loading_screen(placeholder):
         </style>
         <div class="loading-overlay"><div class="loading-text">📦 CARREGANDO DADOS...</div></div>
         """
-    try:
-        placeholder.markdown(loading_html, unsafe_allow_html=True)
-        # Registra o momento em que o loading foi exibido
-        st.session_state["_loading_start_time"] = time.time()
-    except Exception:
-        pass
+    placeholder.markdown(loading_html, unsafe_allow_html=True)
 
 
 def hide_loading_screen(placeholder):
-    """Aguarda o tempo mínimo de loading antes de remover a tela."""
-    try:
-        inicio = st.session_state.get("_loading_start_time")
-        if inicio is not None:
-            decorrido = time.time() - inicio
-            restante  = LOADING_MIN_SEGUNDOS - decorrido
-            if restante > 0:
-                time.sleep(restante)
-            # Limpa o timestamp para não afetar próximas chamadas
-            st.session_state.pop("_loading_start_time", None)
-        placeholder.empty()
-    except Exception:
-        try:
-            placeholder.empty()
-        except Exception:
-            pass
+    placeholder.empty()
 
 
 # =====================================================
@@ -347,6 +323,11 @@ def load_custom_css():
         font-size: clamp(0.62rem, 1vw, 0.78rem); font-weight: 600; color: #cccccc !important;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; margin-top: 2px;
     }}
+    .mini-card-grupo {{
+        font-size: clamp(0.55rem, 0.85vw, 0.68rem); font-weight: 700; display: block;
+        margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        opacity: 0.85;
+    }}
 
     .card-info-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 155px), 1fr)); gap: 8px; }}
     .card-info-item {{ display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 7px; min-width: 0; word-break: break-word; }}
@@ -434,6 +415,9 @@ def load_custom_css():
     .stDownloadButton button {{ background-color: {CORES_INTERFACE["botao_primary"]} !important; color: white !important; border: none !important; border-radius: 6px !important; font-weight: 600 !important; padding: 10px 20px !important; transition: all 0.3s !important; }}
     .stDownloadButton button:hover {{ background-color: #cc0000 !important; border: 1px solid #ffffff !important; box-shadow: 0 0 12px #ffffff, 0 0 24px rgba(255,0,0,0.8) !important; color: white !important; }}
 
+    /* =====================================================
+       SIDEBAR — idêntica ao torre_controle.py
+       ===================================================== */
     section[data-testid="stSidebar"] {{ background-color: {CORES_INTERFACE["sidebar_background"]} !important; border-right: 1px solid {CORES_INTERFACE["sidebar_border"]} !important; }}
     section[data-testid="stSidebar"] * {{ color: {CORES_INTERFACE["texto_principal"]} !important; }}
     section[data-testid="stSidebar"] .stMarkdown, section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] div {{ color: {CORES_INTERFACE["texto_principal"]} !important; }}
@@ -448,7 +432,15 @@ def load_custom_css():
     section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"],
     section[data-testid="stSidebar"] [class*="uploadDropzone"],
     section[data-testid="stSidebar"] [class*="fileUploader"],
-    section[data-testid="stSidebar"] [class*="FileUploader"] {{ background-color: #ffffff !important; border: 3px solid #ffb300 !important; border-radius: 12px !important; box-shadow: none !important; outline: none !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; overflow: hidden !important; }}
+    section[data-testid="stSidebar"] [class*="FileUploader"] {{
+        background-color: #ffffff !important; border: 3px solid #ffb300 !important;
+        border-radius: 12px !important; box-shadow: none !important; outline: none !important;
+        width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; overflow: hidden !important;
+    }}
+    section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] > *,
+    section[data-testid="stSidebar"] [class*="uploadDropzone"] > *,
+    section[data-testid="stSidebar"] [class*="fileUploader"] > *,
+    section[data-testid="stSidebar"] [class*="FileUploader"] > * {{ border: none !important; box-shadow: none !important; }}
     section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] *,
     section[data-testid="stSidebar"] [class*="uploadDropzone"] *,
     section[data-testid="stSidebar"] [class*="fileUploader"] *,
@@ -456,11 +448,18 @@ def load_custom_css():
     section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] button,
     section[data-testid="stSidebar"] [class*="uploadDropzone"] button,
     section[data-testid="stSidebar"] [class*="fileUploader"] button,
-    section[data-testid="stSidebar"] [class*="FileUploader"] button {{ background-color: #ffb300 !important; color: #000000 !important; border: none !important; border-radius: 6px !important; font-weight: 700 !important; transition: all 0.2s !important; width: 100% !important; box-sizing: border-box !important; }}
+    section[data-testid="stSidebar"] [class*="FileUploader"] button {{
+        background-color: #ffb300 !important; color: #000000 !important; border: none !important;
+        border-radius: 6px !important; font-weight: 700 !important; transition: all 0.2s !important;
+        width: 100% !important; box-sizing: border-box !important;
+    }}
     section[data-testid="stSidebar"] [data-testid="stFileUploadDropzone"] button:hover,
     section[data-testid="stSidebar"] [class*="uploadDropzone"] button:hover,
     section[data-testid="stSidebar"] [class*="fileUploader"] button:hover,
-    section[data-testid="stSidebar"] [class*="FileUploader"] button:hover {{ background-color: #2e7d32 !important; color: #ffffff !important; box-shadow: 0 0 14px rgba(46, 125, 50, 0.8), 0 0 28px rgba(76, 175, 80, 0.5) !important; }}
+    section[data-testid="stSidebar"] [class*="FileUploader"] button:hover {{
+        background-color: #2e7d32 !important; color: #ffffff !important;
+        box-shadow: 0 0 14px rgba(46, 125, 50, 0.8), 0 0 28px rgba(76, 175, 80, 0.5) !important;
+    }}
 
     .dataframe {{ font-size: 0.85rem !important; color: {CORES_INTERFACE["texto_principal"]} !important; }}
     .dataframe thead tr th {{ background-color: {CORES_INTERFACE["tabela_header_bg"]} !important; color: {CORES_INTERFACE["texto_secundario"]} !important; font-weight: 600 !important; text-transform: uppercase !important; font-size: 0.7rem !important; letter-spacing: 0.5px !important; border-bottom: 1px solid {CORES_INTERFACE["painel_border"]} !important; }}
@@ -511,6 +510,7 @@ def _normalizar_nomes_colunas(df: pd.DataFrame) -> pd.DataFrame:
         "ENTRADA":           "ENTRADA",
         "SAIDA":             "SAIDA",
         "STATUS":            "STATUS",
+        "GRUPO":             "GRUPO",
     }
     try:
         renomear = {}
@@ -578,7 +578,7 @@ def load_data_from_bytes(file_bytes: bytes) -> pd.DataFrame:
             st.error("❌ Nenhum dado válido encontrado!")
             return pd.DataFrame()
 
-        colunas_texto = ["STATUS", "CÓDIGO", "DESCRIÇÃO", "POSIÇÃO"]
+        colunas_texto = ["STATUS", "CÓDIGO", "DESCRIÇÃO", "POSIÇÃO", "GRUPO"]
         for col in colunas_texto:
             if col in df.columns:
                 try:
@@ -771,7 +771,7 @@ def criar_grafico_itens(df_filtrado: pd.DataFrame, fullscreen: bool = False) -> 
             plot_bgcolor="rgba(0,0,0,0)" if not fullscreen else "#141414",
             font=dict(color="#f5f5f5", size=13),
             bargap=0.25,
-            xaxis=dict(tickangle=-50, tickfont=dict(size=10, family="Arial Black", color="#f5f5f5"),
+            xaxis=dict(tickangle=-50, tickfont=dict(size=14, family="Arial Black", color="#f5f5f5"),
                        automargin=True, showgrid=False),
             yaxis=dict(showgrid=True, gridcolor=CORES_INTERFACE["grid"],
                        tickfont=dict(size=12, color=CORES_INTERFACE["texto_secundario"]),
@@ -782,80 +782,71 @@ def criar_grafico_itens(df_filtrado: pd.DataFrame, fullscreen: bool = False) -> 
         return _figura_vazia(f"⚠️ Erro ao gerar gráfico: {e}", "#ffb300", 420)
 
 
-def criar_grafico_posicao(posicao_df: pd.DataFrame, fullscreen: bool = False) -> go.Figure:
+def criar_grafico_grupo(grupo_df: pd.DataFrame, fullscreen: bool = False) -> go.Figure:
     try:
-        if posicao_df.empty:
-            return _figura_vazia("⚠️ Nenhuma posição disponível", "#ffb300", 320)
+        if grupo_df.empty:
+            return _figura_vazia("⚠️ Nenhum grupo disponível", "#ffb300", 320)
 
-        df_plot    = posicao_df if fullscreen else posicao_df.head(10)
-        cor_zerado = CORES_KPI["MANUTENCAO"]["border"]
-        tem_saldo  = "SALDO_TOTAL" in df_plot.columns
-        cores = [
-            cor_zerado if (tem_saldo and df_plot.iloc[i].get("SALDO_TOTAL", 1) == 0)
-            else CORES_POSICAO[i % len(CORES_POSICAO)]
-            for i in range(len(df_plot))
-        ]
+        df_plot = grupo_df if fullscreen else grupo_df.head(15)
+        cores = [CORES_POSICAO[i % len(CORES_POSICAO)] for i in range(len(df_plot))]
 
-        def _fmt(v):
-            try:
-                return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            except Exception:
-                return "R$ 0,00"
-
-        tem_extra      = "SALDO_TOTAL" in df_plot.columns and "VALOR_TOTAL" in df_plot.columns
-        tem_itens_info = "ITENS_INFO" in df_plot.columns
-        hover_texts    = []
+        hover_texts = []
         for _, r in df_plot.iterrows():
             try:
-                saldo       = int(r.get("SALDO_TOTAL", 0)) if tem_extra else int(r.get("QUANTIDADE", 0))
-                valor_total = _fmt(r.get("VALOR_TOTAL", 0)) if tem_extra else "—"
-                txt = f"<b>Posição: {r['POSIÇÃO']}</b><br>─────────────────────"
-                if tem_itens_info and str(r.get("ITENS_INFO", "")).strip():
-                    txt += f"<br>{r['ITENS_INFO']}"
+                descricoes = str(r.get("ITENS_INFO", "")).strip()
+                txt = f"<b>Grupo: {r['GRUPO']}</b><br>{'─' * 25}"
+                if descricoes:
+                    txt += f"<br>{descricoes}"
                 else:
-                    txt += f"<br>Qtd. em estoque: {saldo}<br>Valor total: {valor_total}"
+                    txt += f"<br>Itens: {int(r.get('QUANTIDADE', 0))}"
             except Exception:
-                txt = f"<b>Posição: {r.get('POSIÇÃO','—')}</b>"
+                txt = f"<b>Grupo: {r.get('GRUPO', '—')}</b>"
             hover_texts.append(txt)
 
-        tem_saldo_col = "SALDO_TOTAL" in df_plot.columns
-        if tem_saldo_col:
-            textos_fatia = df_plot["SALDO_TOTAL"].fillna(0).astype(int).apply(
-                lambda v: str(v) if v > 0 else "0"
-            ).tolist()
-        else:
-            textos_fatia = df_plot["QUANTIDADE"].astype(str).tolist()
+        textos_fatia = df_plot["QUANTIDADE"].astype(str).tolist()
 
         fig = go.Figure(data=[go.Pie(
-            labels=df_plot["POSIÇÃO"], values=df_plot["QUANTIDADE"],
-            hole=0.62, marker=dict(colors=cores, line=dict(color='#0a0a0a', width=2)),
-            textinfo='none', text=hover_texts, customdata=textos_fatia,
+            labels=df_plot["GRUPO"],
+            values=df_plot["QUANTIDADE"],
+            hole=0.62,
+            marker=dict(colors=cores, line=dict(color='#0a0a0a', width=2)),
+            textinfo='none',
+            text=hover_texts,
+            customdata=textos_fatia,
             texttemplate='%{customdata}',
             textfont=dict(color='#ffffff', size=18, family='Arial Black'),
             hovertemplate='%{text}<extra></extra>'
         )])
 
+        base_layout = dict(
+            hoverlabel=dict(
+                bgcolor='#1e1e1e', bordercolor='#555',
+                font=dict(size=14, color='#ffffff', family='Arial Black'),
+                namelength=-1
+            ),
+            showlegend=True,
+            legend=dict(
+                orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02,
+                font=dict(color='#f5f5f5', size=13, family='Arial Black'),
+                bgcolor='rgba(0,0,0,0)'
+            )
+        )
+
         if fullscreen:
-            fig.update_layout(
-                hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
-                                font=dict(size=18, color='#ffffff', family='Arial Black'), namelength=-1),
-                height=720, margin=dict(l=10, r=220, t=20, b=20),
-                paper_bgcolor='#141414', plot_bgcolor='#141414', showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.01,
-                            font=dict(color='#f5f5f5', size=16, family='Arial Black'), bgcolor='rgba(0,0,0,0)')
-            )
+            base_layout.update(dict(
+                height=720, margin=dict(l=10, r=250, t=20, b=20),
+                paper_bgcolor='#141414', plot_bgcolor='#141414'
+            ))
         else:
-            fig.update_layout(
-                hoverlabel=dict(bgcolor='#1e1e1e', bordercolor='#555',
-                                font=dict(size=18, color='#ffffff', family='Arial Black'), namelength=-1),
+            base_layout.update(dict(
                 height=320, margin=dict(l=0, r=0, t=0, b=0),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02,
-                            font=dict(color='#f5f5f5', size=14, family='Arial Black'), bgcolor='rgba(0,0,0,0)')
-            )
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+            ))
+
+        fig.update_layout(**base_layout)
         return fig
     except Exception as e:
-        return _figura_vazia(f"⚠️ Erro ao gerar gráfico de posição: {e}", "#ffb300", 320)
+        return _figura_vazia(f"⚠️ Erro ao gerar gráfico de grupo: {e}", "#ffb300", 320)
 
 
 # =====================================================
@@ -868,6 +859,7 @@ def _html_mini_card(item, cor_override: str | None = None) -> str:
         codigo    = str(item.get("CÓDIGO", "—")).strip()
         descricao = str(item.get("DESCRIÇÃO", "—")).strip()[:50]
         saldo     = item.get("SALDO TOTAL", 0)
+        grupo_val = item.get("GRUPO", None)
         cor_item  = _validar_hex(cor_override if cor_override else _cor_saldo(saldo))
         cor_fundo = _hex_to_rgba(cor_item, 0.22)
         cor_borda = _hex_to_rgba(cor_item, 0.70)
@@ -875,11 +867,24 @@ def _html_mini_card(item, cor_override: str | None = None) -> str:
             saldo_str = str(int(float(saldo)))
         except Exception:
             saldo_str = "—"
+
+        grupo_html = ""
+        try:
+            if grupo_val is not None and str(grupo_val).strip().upper() not in ("", "NAN", "NONE", "NAT"):
+                grupo_str = str(grupo_val).strip()
+                grupo_html = (
+                    f'<span class="mini-card-grupo" style="color:{cor_item};opacity:0.75;">'
+                    f'🏷️ {grupo_str}</span>'
+                )
+        except Exception:
+            pass
+
         return f"""
     <div class="mini-card-item" style="background:{cor_fundo};border:2px solid {cor_borda};border-left:5px solid {cor_item};box-shadow: 0 0 10px {_hex_to_rgba(cor_item, 0.18)};">
         <span class="mini-card-codigo" style="color:{cor_item};text-shadow:0 0 10px {_hex_to_rgba(cor_item, 0.5)};">📦 {codigo}</span>
         <span class="mini-card-descricao" style="color:#e0e0e0;">{descricao}</span>
         <span class="mini-card-status-badge" style="background:{_hex_to_rgba(cor_item, 0.30)};border:1px solid {cor_item};color:{cor_item};">{status}</span>
+        {grupo_html}
         <span class="mini-card-saldo">📊 Saldo: <b style="color:{cor_item};">{saldo_str}</b></span>
     </div>
     """
@@ -903,7 +908,7 @@ def _html_card_completo(item, cor_override: str | None = None) -> str:
         cor_ib2   = _hex_to_rgba(cor_status, 0.35)
 
         campos_cabecalho  = {"CÓDIGO", "DESCRIÇÃO", "STATUS"}
-        campos_prioridade = ["POSIÇÃO", "ENTRADA", "SAIDA", "SALDO TOTAL", "VALORES UNITÁRIOS", "VALOR TOTAL"]
+        campos_prioridade = ["GRUPO", "POSIÇÃO", "ENTRADA", "SAIDA", "SALDO TOTAL", "VALORES UNITÁRIOS", "VALOR TOTAL"]
         todos_campos      = list(item.index)
         campos_extras     = [c for c in todos_campos if c not in campos_cabecalho and c not in campos_prioridade]
         ordem_final       = campos_prioridade + campos_extras
@@ -1071,7 +1076,6 @@ def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
         if key_aberto not in st.session_state:
             st.session_state[key_aberto] = True
 
-        # ── VIEW: item individual ──────────────────────────────────
         if st.session_state[key_sel] is not None:
             codigo_sel = st.session_state[key_sel]
             try:
@@ -1105,7 +1109,6 @@ def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
                 st.markdown(_html_card_completo(resultado.iloc[0], cor_override=cor_hex), unsafe_allow_html=True)
             return
 
-        # ── VIEW: lista de itens ───────────────────────────────────
         col_inicio, col_espacador, col_fechar = st.columns([1, 5, 1])
         with col_inicio:
             if st.button("🏠 INÍCIO", key=f"btn_inicio_{titulo}", use_container_width=True):
@@ -1154,7 +1157,7 @@ def mostrar_detalhes_kpi(titulo: str, cor_hex: str, df_kpi: pd.DataFrame):
             pass
 
         busca = st.text_input(
-            "🔍 Busca rápida", placeholder="Código, descrição, posição...",
+            "🔍 Busca rápida", placeholder="Código, descrição, posição, grupo...",
             key=key_busca, label_visibility="collapsed"
         )
 
@@ -1294,24 +1297,389 @@ def criar_painel_status(df_filtrado: pd.DataFrame):
         st.error(f"Erro ao criar painel de status: {e}")
 
 
-def criar_painel_posicao(posicao_df: pd.DataFrame):
+def criar_painel_grupo(grupo_df: pd.DataFrame):
     try:
         with st.container(border=True):
             col_t, col_b = st.columns([11, 1])
             with col_t:
-                st.markdown('<div class="card-title">📍 DISTRIBUIÇÃO POR POSIÇÃO</div>', unsafe_allow_html=True)
+                st.markdown('<div class="card-title">🏷️ DISTRIBUIÇÃO POR GRUPO</div>', unsafe_allow_html=True)
             with col_b:
                 st.markdown('<div class="btn-fullscreen">', unsafe_allow_html=True)
-                if st.button("⛶", key="fs_btn_posicao"):
-                    st.session_state["_grafico_fs"] = "posicao"
+                if st.button("⛶", key="fs_btn_grupo"):
+                    st.session_state["_grafico_fs"] = "grupo"
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
-            if not posicao_df.empty:
-                st.plotly_chart(criar_grafico_posicao(posicao_df), use_container_width=True, config={'displayModeBar': False})
-            else:
-                st.info("Nenhuma posição cadastrada")
+
+            if grupo_df.empty:
+                st.info("Nenhum grupo cadastrado")
+                return
+
+            # Monta JSON dos grupos para o tooltip e clique
+            grupos_data = {}
+            for _, r in grupo_df.iterrows():
+                grupo_nome = str(r["GRUPO"])
+                itens_raw  = str(r.get("ITENS_INFO", "")).strip()
+                linhas = [l.strip() for l in itens_raw.split("<br>") if l.strip()]
+                grupos_data[grupo_nome] = {
+                    "qtd":   int(r["QUANTIDADE"]),
+                    "itens": linhas
+                }
+
+            grupos_json = json.dumps(grupos_data, ensure_ascii=False)
+
+            fig = criar_grafico_grupo(grupo_df)
+            fig.update_traces(hoverinfo='none', hovertemplate=None)
+
+            chart_html = fig.to_html(
+                full_html=False,
+                include_plotlyjs=False,
+                config={'displayModeBar': False}
+            )
+
+            cores_js = json.dumps(CORES_POSICAO)
+
+            html = f"""
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+  body {{ margin:0; background:transparent; }}
+
+  #custom-tooltip {{
+    display:none;
+    position:fixed;
+    z-index:99999;
+    background:#1a1a1a;
+    border:1.5px solid #555;
+    border-radius:10px;
+    padding:12px 16px;
+    max-width:340px;
+    min-width:200px;
+    max-height:55vh;
+    overflow-y:auto;
+    overflow-x:hidden;
+    box-shadow:0 8px 32px rgba(0,0,0,0.7);
+    pointer-events:auto;
+    cursor:default;
+    font-family: Arial Black, Arial, sans-serif;
+    font-size:13px;
+    color:#ffffff;
+    line-height:1.6;
+    scrollbar-width:thin;
+    scrollbar-color:#555 #1a1a1a;
+  }}
+
+  /* OVERLAY FULLSCREEN */
+  #grupo-overlay {{
+    display:none;
+    position:fixed;
+    top:0; left:0; width:100vw; height:100vh;
+    background:rgba(0,0,0,0.97);
+    z-index:999999;
+    flex-direction:column;
+    align-items:stretch;
+    justify-content:flex-start;
+    overflow:hidden;
+  }}
+  #grupo-overlay.ativo {{
+    display:flex;
+  }}
+  #overlay-header {{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 28px 10px 28px;
+    border-bottom:1px solid #333;
+    flex-shrink:0;
+  }}
+  #overlay-titulo {{
+    font-family: Arial Black, Arial, sans-serif;
+    font-size:1.4rem;
+    font-weight:900;
+    color:#ffffff;
+    letter-spacing:2px;
+    text-transform:uppercase;
+  }}
+  #overlay-grupo-nome {{
+    font-size:1rem;
+    color:#aaa;
+    margin-top:2px;
+    letter-spacing:1px;
+  }}
+  #btn-fechar-overlay {{
+    background:#c62828;
+    color:#fff;
+    border:2px solid #ef5350;
+    border-radius:8px;
+    font-size:1rem;
+    font-weight:900;
+    padding:10px 28px;
+    cursor:pointer;
+    letter-spacing:1px;
+    box-shadow:0 0 18px rgba(198,40,40,0.7);
+    transition:all 0.2s;
+    flex-shrink:0;
+  }}
+  #btn-fechar-overlay:hover {{
+    box-shadow:0 0 30px rgba(239,83,80,1);
+    background:#e53935;
+  }}
+  #overlay-body {{
+    flex:1;
+    overflow-y:auto;
+    padding:20px 28px 28px 28px;
+    scrollbar-width:thin;
+    scrollbar-color:#555 #111;
+  }}
+  .overlay-item {{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:12px 16px;
+    border-radius:10px;
+    margin-bottom:8px;
+    border-left:5px solid #555;
+    background:rgba(255,255,255,0.04);
+    font-family: Arial, sans-serif;
+    font-size:14px;
+    color:#e0e0e0;
+    transition:background 0.15s;
+  }}
+  .overlay-item:hover {{
+    background:rgba(255,255,255,0.09);
+  }}
+  .overlay-item .icone {{
+    font-size:1.3rem;
+    flex-shrink:0;
+  }}
+  .overlay-item .desc {{
+    flex:1;
+    font-weight:600;
+    word-break:break-word;
+  }}
+  .overlay-item .saldo-badge {{
+    font-size:0.8rem;
+    font-weight:800;
+    padding:3px 10px;
+    border-radius:20px;
+    white-space:nowrap;
+    flex-shrink:0;
+  }}
+  #overlay-resumo {{
+    display:flex;
+    gap:16px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }}
+  .resumo-card {{
+    border-radius:10px;
+    padding:12px 20px;
+    text-align:center;
+    min-width:100px;
+    border:1.5px solid;
+  }}
+  .resumo-card .r-num {{
+    font-size:1.8rem;
+    font-weight:900;
+    font-family: Arial Black, Arial;
+  }}
+  .resumo-card .r-label {{
+    font-size:0.65rem;
+    text-transform:uppercase;
+    letter-spacing:1px;
+    margin-top:2px;
+    opacity:0.8;
+  }}
+</style>
+
+<!-- TOOLTIP -->
+<div id="custom-tooltip"></div>
+
+<!-- OVERLAY FULLSCREEN -->
+<div id="grupo-overlay">
+  <div id="overlay-header">
+    <div>
+      <div id="overlay-titulo">🏷️ GRUPO</div>
+      <div id="overlay-grupo-nome"></div>
+    </div>
+    <button id="btn-fechar-overlay" onclick="fecharOverlay()">✕ FECHAR</button>
+  </div>
+  <div id="overlay-body">
+    <div id="overlay-resumo"></div>
+    <div id="overlay-lista"></div>
+  </div>
+</div>
+
+<!-- GRÁFICO -->
+<div id="grupo-chart" style="cursor:pointer;">
+  {chart_html}
+</div>
+
+<script>
+(function() {{
+  var gruposData = {grupos_json};
+  var coresPosicao = {cores_js};
+  var tooltip = document.getElementById('custom-tooltip');
+  var overlay = document.getElementById('grupo-overlay');
+  var MARGIN  = 16;
+
+  /* ── TOOLTIP ── */
+  function posicionarTooltip(mx, my) {{
+    tooltip.style.display = 'block';
+    var tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+    var vw = window.innerWidth,   vh = window.innerHeight;
+    var left = mx + MARGIN;
+    if (left + tw > vw - MARGIN) left = mx - tw - MARGIN;
+    if (left < MARGIN) left = MARGIN;
+    var top = my - th / 2;
+    if (top < MARGIN) top = MARGIN;
+    if (top + th > vh - MARGIN) top = vh - th - MARGIN;
+    if (top < MARGIN) top = MARGIN;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top  = top  + 'px';
+  }}
+
+  function esconderTooltip() {{ tooltip.style.display = 'none'; }}
+
+  function htmlTooltip(grupoNome, info) {{
+    var h = '<div style="color:#aaa;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">GRUPO</div>'
+          + '<div style="color:#fff;font-size:15px;font-weight:900;margin-bottom:8px;letter-spacing:1px;">' + grupoNome + '</div>'
+          + '<div style="border-top:1px solid #444;margin-bottom:8px;"></div>'
+          + '<div style="color:#aaa;font-size:11px;margin-bottom:6px;">Clique para ver detalhes completos</div>';
+    info.itens.forEach(function(linha) {{
+      h += '<div style="padding:3px 0;border-bottom:1px solid #2a2a2a;">' + linha + '</div>';
+    }});
+    h += '<div style="margin-top:8px;color:#aaa;font-size:11px;">Total: <b style=\\"color:#fff;\\">' + info.qtd + '</b> itens</div>';
+    return h;
+  }}
+
+  /* ── OVERLAY ── */
+  window.fecharOverlay = function() {{
+    overlay.classList.remove('ativo');
+    document.body.style.overflow = '';
+  }};
+
+  function abrirOverlay(grupoNome, info, corGrupo) {{
+    document.getElementById('overlay-grupo-nome').textContent = grupoNome;
+    document.getElementById('overlay-titulo').innerHTML = '🏷️ GRUPO — <span style="color:' + corGrupo + ';">' + grupoNome + '</span>';
+
+    // Resumo
+    var n_ok = 0, n_alerta = 0, n_zero = 0;
+    info.itens.forEach(function(linha) {{
+      if (linha.indexOf('🔴') >= 0) n_zero++;
+      else if (linha.indexOf('🟠') >= 0) n_alerta++;
+      else n_ok++;
+    }});
+
+    var resumoEl = document.getElementById('overlay-resumo');
+    resumoEl.innerHTML =
+      _resumoCard(info.qtd,  '#29b6f6', 'TOTAL') +
+      _resumoCard(n_ok,      '#00e676', 'OK') +
+      _resumoCard(n_alerta,  '#ffb300', 'ALERTA') +
+      _resumoCard(n_zero,    '#ff3d00', 'ZERADO');
+
+    // Lista de itens
+    var listaEl = document.getElementById('overlay-lista');
+    listaEl.innerHTML = '';
+    info.itens.forEach(function(linha) {{
+      var icone = '📦', corBorda = '#00e676', corSaldo = '#00e676', corFundo = 'rgba(0,230,118,0.08)';
+      if (linha.indexOf('🔴') >= 0) {{
+        icone = '🔴'; corBorda = '#ff3d00'; corSaldo = '#ff3d00'; corFundo = 'rgba(255,61,0,0.08)';
+      }} else if (linha.indexOf('🟠') >= 0) {{
+        icone = '🟠'; corBorda = '#ffb300'; corSaldo = '#ffb300'; corFundo = 'rgba(255,179,0,0.08)';
+      }}
+
+      // Extrai desc e saldo do formato "icone desc — saldo: N"
+      var texto = linha.replace('📦','').replace('🔴','').replace('🟠','').trim();
+      var partes = texto.split('— saldo:');
+      var desc   = partes[0] ? partes[0].trim() : texto;
+      var saldo  = partes[1] ? partes[1].trim() : '—';
+
+      var div = document.createElement('div');
+      div.className = 'overlay-item';
+      div.style.borderLeftColor = corBorda;
+      div.style.background = corFundo;
+      div.innerHTML =
+        '<span class="icone">' + icone + '</span>' +
+        '<span class="desc">' + desc + '</span>' +
+        '<span class="saldo-badge" style="background:' + corFundo + ';border:1px solid ' + corBorda + ';color:' + corSaldo + ';">Saldo: ' + saldo + '</span>';
+      listaEl.appendChild(div);
+    }});
+
+    overlay.classList.add('ativo');
+    document.getElementById('overlay-body').scrollTop = 0;
+    document.body.style.overflow = 'hidden';
+  }}
+
+  function _resumoCard(num, cor, label) {{
+    return '<div class="resumo-card" style="border-color:' + cor + ';background:rgba(255,255,255,0.04);color:' + cor + ';">'
+         + '<div class="r-num">' + num + '</div>'
+         + '<div class="r-label">' + label + '</div>'
+         + '</div>';
+  }}
+
+  /* ── PLOTLY EVENTS ── */
+  var tentativas = 0;
+  var intervalo  = setInterval(function() {{
+    var plotDiv = document.querySelector('#grupo-chart .js-plotly-plot');
+    if (!plotDiv) {{
+      if (++tentativas > 40) clearInterval(intervalo);
+      return;
+    }}
+    clearInterval(intervalo);
+
+    plotDiv.on('plotly_hover', function(data) {{
+      try {{
+        var pt        = data.points[0];
+        var nome      = String(pt.label);
+        var info      = gruposData[nome];
+        if (!info) {{ esconderTooltip(); return; }}
+        tooltip.innerHTML = htmlTooltip(nome, info);
+        var evt = data.event;
+        posicionarTooltip(evt.clientX, evt.clientY);
+      }} catch(e) {{ esconderTooltip(); }}
+    }});
+
+    plotDiv.on('plotly_unhover', function() {{
+      setTimeout(function() {{
+        if (!tooltip.matches(':hover')) esconderTooltip();
+      }}, 80);
+    }});
+
+    plotDiv.on('plotly_click', function(data) {{
+      try {{
+        var pt    = data.points[0];
+        var nome  = String(pt.label);
+        var info  = gruposData[nome];
+        if (!info) return;
+        var idx   = Object.keys(gruposData).indexOf(nome);
+        var cor   = coresPosicao[idx % coresPosicao.length];
+        esconderTooltip();
+        abrirOverlay(nome, info, cor);
+      }} catch(e) {{}}
+    }});
+
+    plotDiv.addEventListener('mousemove', function(e) {{
+      if (tooltip.style.display === 'block' && !tooltip.matches(':hover')) {{
+        posicionarTooltip(e.clientX, e.clientY);
+      }}
+    }});
+
+    plotDiv.addEventListener('mouseleave', function() {{
+      setTimeout(function() {{
+        if (!tooltip.matches(':hover')) esconderTooltip();
+      }}, 80);
+    }});
+
+    tooltip.addEventListener('mouseleave', function() {{
+      esconderTooltip();
+    }});
+  }}, 100);
+}})();
+</script>
+"""
+            components.html(html, height=420, scrolling=False)
+
     except Exception as e:
-        st.error(f"Erro ao criar painel de posição: {e}")
+        st.error(f"Erro ao criar painel de grupo: {e}")
 
 
 def criar_painel_itens(df_filtrado: pd.DataFrame):
@@ -1334,8 +1702,8 @@ def criar_painel_itens(df_filtrado: pd.DataFrame):
 def mostrar_grafico_fullscreen(grafico_id: str, df_filtrado: pd.DataFrame, posicao_df: pd.DataFrame):
     try:
         titulos = {
-            "posicao": "📍 DISTRIBUIÇÃO POR POSIÇÃO",
-            "itens":   "📦 PEÇAS COM MAIS SAÍDA",
+            "grupo": "🏷️ DISTRIBUIÇÃO POR GRUPO",
+            "itens": "📦 PEÇAS COM MAIS SAÍDA",
         }
         titulo = titulos.get(grafico_id, "")
 
@@ -1357,8 +1725,8 @@ def mostrar_grafico_fullscreen(grafico_id: str, df_filtrado: pd.DataFrame, posic
 
         st.markdown("<hr style='border-color:#484848;margin:0 0 12px 0;'>", unsafe_allow_html=True)
 
-        if grafico_id == "posicao":
-            fig = criar_grafico_posicao(posicao_df, fullscreen=True)
+        if grafico_id == "grupo":
+            fig = criar_grafico_grupo(posicao_df)
         elif grafico_id == "itens":
             fig = criar_grafico_itens(df_filtrado, fullscreen=True)
         else:
@@ -1371,49 +1739,56 @@ def mostrar_grafico_fullscreen(grafico_id: str, df_filtrado: pd.DataFrame, posic
 
 
 # =====================================================
-# SIDEBAR
-# Lógica de loading com tempo mínimo garantido:
-# 1. Novo arquivo → salva bytes, mostra loading, processa, aguarda 5s, remove loading
-# 2. Reruns subsequentes → dados já no session_state, sem loading
+# SIDEBAR — idêntica ao torre_controle.py
 # =====================================================
 def criar_sidebar(loading_placeholder) -> pd.DataFrame:
     try:
         with st.sidebar:
             st.header("🎛️ FILTROS DO ALMOXARIFADO")
             st.divider()
+            st.subheader("📁 CARREGAR ARQUIVO")
 
             uploaded_file = st.file_uploader(
-                "📁 CARREGAR ARQUIVO", type=['xlsx', 'xls'],
-                label_visibility="visible"
+                "Faça upload do arquivo Excel", type=['xlsx', 'xls'],
+                help="Selecione o arquivo da planilha de almoxarifado",
+                label_visibility="collapsed"
             )
 
-            # ── Quando um novo arquivo é carregado, salva os bytes no session_state ──
+            df_base = pd.DataFrame()
+
             if uploaded_file is not None:
                 file_bytes = uploaded_file.read()
-                # Só reprocessa se for um arquivo diferente do que já está em cache
                 if st.session_state.get("_file_bytes") != file_bytes:
-                    st.session_state["_file_bytes"]    = file_bytes
-                    st.session_state["_df_base"]       = None   # força reload
-                    st.session_state["_loading_done"]  = False  # novo arquivo → precisa de loading
+                    st.session_state["_file_bytes"] = file_bytes
+                    st.session_state["_df_base"]    = None
 
-            # ── Carrega os dados usando bytes (cache por hash dos bytes) ──
-            df_base = pd.DataFrame()
             if st.session_state.get("_file_bytes") is not None:
-
-                # Primeira carga do arquivo atual — exibe loading e processa
                 if st.session_state.get("_df_base") is None:
-                    # Mostra a tela de loading (registra timestamp internamente)
+                    import time
+
+                    # Sinaliza que está carregando — bloqueia qualquer outro render
+                    st.session_state["_carregando"] = True
+
+                    # Mostra loading imediatamente
                     show_loading_screen(loading_placeholder)
 
-                    # Processa os dados (pode ser rápido se já estiver em cache do st.cache_data)
+                    inicio = time.time()
+
+                    # Processa os dados
                     df_base = load_data_from_bytes(st.session_state["_file_bytes"])
                     st.session_state["_df_base"] = df_base
 
-                    # Aguarda o tempo mínimo e remove o loading
-                    hide_loading_screen(loading_placeholder)
+                    # Garante mínimo de 7 segundos
+                    elapsed = time.time() - inicio
+                    restante = 7.0 - elapsed
+                    if restante > 0:
+                        time.sleep(restante)
 
+                    # Só agora libera o render e esconde o loading
+                    st.session_state["_carregando"] = False
+                    hide_loading_screen(loading_placeholder)
+                    st.rerun()
                 else:
-                    # Dados já carregados — retorna instantaneamente sem loading
                     df_base = st.session_state["_df_base"]
 
                 if not df_base.empty:
@@ -1451,37 +1826,49 @@ def criar_sidebar(loading_placeholder) -> pd.DataFrame:
                             st.session_state["_relatorio_preview"] = True
                             st.rerun()
 
-                        if n_alerta > 0 or n_zerado > 0:
-                            try:
-                                from gerar_relatorio import gerar_bytes_relatorio
-                                rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
+                        try:
+                            from gerar_relatorio import gerar_bytes_relatorio
+
+                            if n_alerta > 0:
+                                rel_alerta = gerar_bytes_relatorio(df_alerta, pd.DataFrame())
                                 st.download_button(
-                                    label="⬇️ BAIXAR RELATÓRIO (.pdf)",
-                                    data=rel_bytes,
-                                    file_name="relatorio_alertas_almoxarifado.pdf",
+                                    label="🟠 BAIXAR RELATÓRIO — ALERTA (.pdf)",
+                                    data=rel_alerta,
+                                    file_name="relatorio_alerta_estoque_baixo.pdf",
                                     mime="application/pdf",
-                                    key="btn_download_relatorio",
+                                    key="btn_download_relatorio_alerta",
                                     use_container_width=True
                                 )
-                            except ImportError:
-                                pass
-                            except Exception as e:
-                                st.error(f"Erro ao gerar relatório: {e}")
-                        else:
-                            st.info("✅ Nenhum alerta ou item zerado para exportar.")
+
+                            if n_zerado > 0:
+                                rel_zerado = gerar_bytes_relatorio(pd.DataFrame(), df_zerado)
+                                st.download_button(
+                                    label="🔴 BAIXAR RELATÓRIO — ZERADOS (.pdf)",
+                                    data=rel_zerado,
+                                    file_name="relatorio_zerados_sem_estoque.pdf",
+                                    mime="application/pdf",
+                                    key="btn_download_relatorio_zerado",
+                                    use_container_width=True
+                                )
+
+                            if n_alerta == 0 and n_zerado == 0:
+                                st.info("✅ Nenhum alerta ou item zerado para exportar.")
+
+                        except ImportError:
+                            pass
+                        except Exception as e:
+                            st.error(f"Erro ao gerar relatório: {e}")
                     except Exception as e:
                         st.warning(f"Aviso na seção de relatório: {e}")
 
                     st.divider()
-                    # Botão atualizar — limpa cache e session_state
                     if st.button("🔄 ATUALIZAR DADOS AGORA", use_container_width=True):
                         st.cache_data.clear()
-                        st.session_state["_df_base"]      = None
-                        st.session_state["_file_bytes"]   = None
-                        st.session_state["_loading_done"] = False
+                        st.session_state["_df_base"]    = None
+                        st.session_state["_file_bytes"] = None
                         st.rerun()
             else:
-                st.info("⬆️ Faça upload da planilha")
+                st.info("⬆️ Faça upload de um arquivo Excel para visualizar os dados.")
 
             return df_base
     except Exception as e:
@@ -1526,22 +1913,38 @@ def mostrar_preview_relatorio(df_base: pd.DataFrame):
 
         n_alerta = len(df_alerta)
         n_zerado = len(df_zerado)
-        if n_alerta > 0 or n_zerado > 0:
-            try:
-                from gerar_relatorio import gerar_bytes_relatorio
-                rel_bytes = gerar_bytes_relatorio(df_alerta, df_zerado)
-                st.download_button(
-                    label="⬇️ BAIXAR RELATÓRIO (.pdf)",
-                    data=rel_bytes,
-                    file_name="relatorio_alertas_almoxarifado.pdf",
-                    mime="application/pdf",
-                    key="btn_download_preview_top",
-                    use_container_width=False
-                )
-            except ImportError:
-                pass
-            except Exception as e:
-                st.error(f"Erro ao gerar relatório: {e}")
+        try:
+            from gerar_relatorio import gerar_bytes_relatorio
+            col_btn1, col_btn2 = st.columns(2)
+
+            if n_alerta > 0:
+                with col_btn1:
+                    rel_alerta = gerar_bytes_relatorio(df_alerta, pd.DataFrame())
+                    st.download_button(
+                        label="🟠 ALERTA (.pdf)",
+                        data=rel_alerta,
+                        file_name="relatorio_alerta_estoque_baixo.pdf",
+                        mime="application/pdf",
+                        key="btn_download_preview_alerta",
+                        use_container_width=True
+                    )
+
+            if n_zerado > 0:
+                with col_btn2:
+                    rel_zerado = gerar_bytes_relatorio(pd.DataFrame(), df_zerado)
+                    st.download_button(
+                        label="🔴 ZERADOS (.pdf)",
+                        data=rel_zerado,
+                        file_name="relatorio_zerados_sem_estoque.pdf",
+                        mime="application/pdf",
+                        key="btn_download_preview_zerado",
+                        use_container_width=True
+                    )
+
+        except ImportError:
+            pass
+        except Exception as e:
+            st.error(f"Erro ao gerar relatório: {e}")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1610,7 +2013,8 @@ def main():
     df_base = criar_sidebar(loading_placeholder)
 
     if df_base.empty:
-        st.markdown("""
+        if st.session_state.get("_file_bytes") is None:
+            st.markdown("""
     <style>
     .centered-warning { display: flex; justify-content: center; align-items: center; min-height: 60vh; text-align: center; }
     .warning-box { background-color: #1e1e1e; border: 2px solid #ff9800; border-radius: 15px; padding: 40px 60px; box-shadow: 0 0 20px rgba(255, 152, 0, 0.3); }
@@ -1658,84 +2062,53 @@ def main():
             mostrar_detalhes_kpi(nome, cor, st.session_state[df_key])
             st.stop()
 
-    # ── Posição ────────────────────────────────────────────────────
-    posicao_df = pd.DataFrame()
+   # ── Grupo ────────────────────────────────────────────────────
+    grupo_df = pd.DataFrame()
     try:
-        if "POSIÇÃO" in df_filtrado.columns:
-            df_pos = df_filtrado[
-                df_filtrado["POSIÇÃO"].notna() &
-                (df_filtrado["POSIÇÃO"].astype(str).str.strip() != "")
+        if "GRUPO" in df_filtrado.columns:
+            df_grp = df_filtrado[
+                df_filtrado["GRUPO"].notna() &
+                (~df_filtrado["GRUPO"].astype(str).str.strip().str.upper().isin(["", "NAN", "NONE", "NAT"]))
             ].copy()
-            df_pos["SALDO TOTAL"] = pd.to_numeric(df_pos["SALDO TOTAL"], errors="coerce").fillna(0)
+            df_grp["SALDO TOTAL"] = pd.to_numeric(df_grp["SALDO TOTAL"], errors="coerce").fillna(0)
 
-            if "VALORES UNITÁRIOS" in df_pos.columns:
-                df_pos["_VT"] = pd.to_numeric(df_pos["VALORES UNITÁRIOS"], errors="coerce").fillna(0) * df_pos["SALDO TOTAL"]
-            elif "VALOR TOTAL" in df_pos.columns:
-                vt = pd.to_numeric(df_pos["VALOR TOTAL"], errors="coerce").fillna(0)
-                df_pos["_VT"] = vt.where(df_pos["SALDO TOTAL"] > 0, other=0.0)
-            else:
-                df_pos["_VT"] = 0.0
+            tem_desc = "DESCRIÇÃO" in df_grp.columns
 
-            def _fmt_vu(v):
-                try:
-                    return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                except Exception:
-                    return "—"
-
-            tem_desc   = "DESCRIÇÃO" in df_pos.columns
-            tem_vu     = "VALORES UNITÁRIOS" in df_pos.columns
-            tem_vt_col = "VALOR TOTAL" in df_pos.columns
-
-            def _itens_info(grp):
+            def _descricoes_grupo(grp):
                 partes = []
                 for _, r in grp.iterrows():
                     try:
-                        saldo = float(r.get("SALDO TOTAL", 0))
-                        desc  = str(r.get("DESCRIÇÃO", "—"))[:40] if tem_desc else "—"
-                        vu    = _fmt_vu(r.get("VALORES UNITÁRIOS", 0)) if tem_vu else "—"
-                        if tem_vu:
-                            vt = float(r.get("VALORES UNITÁRIOS", 0)) * saldo
-                        elif tem_vt_col:
-                            vt = float(r.get("VALOR TOTAL", 0)) if saldo > 0 else 0.0
-                        else:
-                            vt = 0.0
-                        qtd         = int(saldo)
-                        status_icon = "🔴" if qtd == 0 else "📦"
-                        partes.append(
-                            f"{status_icon} Descrição: {desc}<br>"
-                            f"     Quantidade: {qtd}<br>"
-                            f"     Valor unitário: {vu}<br>"
-                            f"     Valor total: {_fmt_vu(vt)}"
-                        )
+                        desc  = str(r.get("DESCRIÇÃO", "—"))[:55] if tem_desc else "—"
+                        saldo = int(float(r.get("SALDO TOTAL", 0)))
+                        icone = "🔴" if saldo == 0 else ("🟠" if saldo <= 3 else "📦")
+                        partes.append(f"{icone} {desc} — saldo: {saldo}")
                     except Exception:
                         continue
                 return "<br>".join(partes)
 
             try:
-                itens_info_map = df_pos.groupby("POSIÇÃO").apply(
-                    _itens_info, include_groups=False
+                itens_info_map = df_grp.groupby("GRUPO").apply(
+                    _descricoes_grupo, include_groups=False
                 ).to_dict()
             except TypeError:
-                itens_info_map = df_pos.groupby("POSIÇÃO").apply(_itens_info).to_dict()
+                itens_info_map = df_grp.groupby("GRUPO").apply(_descricoes_grupo).to_dict()
             except Exception:
                 itens_info_map = {}
 
-            pos_counts = df_pos.groupby("POSIÇÃO").agg(
-                QUANTIDADE=("POSIÇÃO", "count"),
-                SALDO=("SALDO TOTAL", "sum"),
-                VALOR=("_VT", "sum")
-            ).reset_index()
-            pos_counts["ITENS_INFO"] = pos_counts["POSIÇÃO"].map(itens_info_map).fillna("")
-            pos_counts               = pos_counts.sort_values("QUANTIDADE", ascending=False)
+            grp_counts = (
+                df_grp.groupby("GRUPO")
+                .size()
+                .reset_index(name="QUANTIDADE")
+                .sort_values("QUANTIDADE", ascending=False)
+            )
+            grp_counts["ITENS_INFO"] = grp_counts["GRUPO"].map(itens_info_map).fillna("")
+            grupo_df = grp_counts
 
-            if not pos_counts.empty:
-                posicao_df = pos_counts.rename(columns={"SALDO": "SALDO_TOTAL", "VALOR": "VALOR_TOTAL"})
-                posicao_df["QUANTIDADE"] = posicao_df["QUANTIDADE"].clip(lower=1)
     except Exception as e:
-        st.warning(f"Aviso ao processar posições: {e}")
+        st.warning(f"Aviso ao processar grupos: {e}")
 
     if st.session_state.get("_grafico_fs"):
-        mostrar_grafico_fullscreen(st.session_state["_grafico_fs"], df_filtrado, posicao_df)
+        mostrar_grafico_fullscreen(st.session_state["_grafico_fs"], df_filtrado, grupo_df)
         st.stop()
 
     try:
@@ -1743,7 +2116,7 @@ def main():
         with col1:
             criar_painel_status(df_filtrado)
         with col2:
-            criar_painel_posicao(posicao_df)
+            criar_painel_grupo(grupo_df)
     except Exception as e:
         st.error(f"Erro ao renderizar painéis superiores: {e}")
 
@@ -1754,7 +2127,7 @@ def main():
     try:
         with st.container(border=True):
             st.markdown('<div class="card-title">📋 DETALHAMENTO DO ESTOQUE</div>', unsafe_allow_html=True)
-            colunas = ["CÓDIGO", "DESCRIÇÃO", "STATUS"]
+            colunas = ["CÓDIGO", "DESCRIÇÃO", "GRUPO", "STATUS"]
             if "POSIÇÃO" in df_filtrado.columns:
                 colunas.append("POSIÇÃO")
             colunas += ["ENTRADA", "SAIDA", "SALDO TOTAL"]
