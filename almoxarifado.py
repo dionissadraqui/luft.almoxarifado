@@ -548,7 +548,7 @@ def _renomear_colunas_duplicadas(df: pd.DataFrame) -> pd.DataFrame:
 def load_data_from_bytes(file_bytes: bytes) -> pd.DataFrame:
     import io
     try:
-        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
+        df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, dtype=str)
 
         if df.empty:
             st.error("❌ A planilha está vazia!")
@@ -1352,7 +1352,17 @@ def criar_painel_grupo(grupo_df: pd.DataFrame):
                     "itens": linhas
                 }
 
+            alias_map = {}
+            for nome_orig in list(grupos_data.keys()):
+                try:
+                    alias = str(int(float(nome_orig)))
+                    if alias != nome_orig:
+                        alias_map[alias] = nome_orig
+                except (ValueError, TypeError):
+                    pass
+
             grupos_json = json.dumps(grupos_data, ensure_ascii=False)
+            alias_json  = json.dumps(alias_map,   ensure_ascii=False)
 
             fig = criar_grafico_grupo(grupo_df)
             fig.update_traces(hoverinfo='none', hovertemplate=None)
@@ -1542,8 +1552,16 @@ def criar_painel_grupo(grupo_df: pd.DataFrame):
 
 <script>
 (function() {{
-  var gruposData = {grupos_json};
+  var gruposData   = {grupos_json};
+  var aliasMap     = {alias_json};
   var coresPosicao = {cores_js};
+
+  function resolverNome(label) {{
+    var chave = String(label);
+    if (gruposData[chave] !== undefined) return chave;
+    if (aliasMap[chave]   !== undefined) return aliasMap[chave];
+    return null;
+  }}
   var tooltip = document.getElementById('custom-tooltip');
   var overlay = document.getElementById('grupo-overlay');
   var MARGIN  = 16;
@@ -1653,11 +1671,12 @@ def criar_painel_grupo(grupo_df: pd.DataFrame):
     }}
     clearInterval(intervalo);
 
-    plotDiv.on('plotly_hover', function(data) {{
+   plotDiv.on('plotly_hover', function(data) {{
       try {{
-        var pt        = data.points[0];
-        var nome      = String(pt.label);
-        var info      = gruposData[nome];
+        var pt   = data.points[0];
+        var nome = resolverNome(pt.label);
+        if (!nome) {{ esconderTooltip(); return; }}
+        var info = gruposData[nome];
         if (!info) {{ esconderTooltip(); return; }}
         tooltip.innerHTML = htmlTooltip(nome, info);
         var evt = data.event;
@@ -1673,12 +1692,13 @@ def criar_painel_grupo(grupo_df: pd.DataFrame):
 
     plotDiv.on('plotly_click', function(data) {{
       try {{
-        var pt    = data.points[0];
-        var nome  = String(pt.label);
-        var info  = gruposData[nome];
+        var pt   = data.points[0];
+        var nome = resolverNome(pt.label);
+        if (!nome) return;
+        var info = gruposData[nome];
         if (!info) return;
-        var idx   = Object.keys(gruposData).indexOf(nome);
-        var cor   = coresPosicao[idx % coresPosicao.length];
+        var idx  = Object.keys(gruposData).indexOf(nome);
+        var cor  = coresPosicao[idx % coresPosicao.length];
         esconderTooltip();
         abrirOverlay(nome, info, cor);
       }} catch(e) {{}}
