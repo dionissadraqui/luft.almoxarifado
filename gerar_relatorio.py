@@ -36,11 +36,31 @@ COR_BORDER        = _hex("CCCCCC")
 BRANCO            = colors.white
 COR_TEXTO         = _hex("1A1A1A")
 
+# Colunas que devem ser exibidas como moeda brasileira (R$)
+_COLUNAS_BRL = {"VALORES UNITÁRIOS", "VALOR TOTAL"}
+
+# Colunas que devem ser tratadas como texto puro (preserva zeros à esquerda)
+_COLUNAS_TEXTO = {"GRUPO", "CÓDIGO"}
+
 
 def _fmt(val):
+    """Formata valor genérico (inteiro se .0, decimal se não)."""
     try:
         f = float(val)
         return str(int(f)) if f == int(f) else str(round(f, 2))
+    except Exception:
+        s = str(val) if val is not None else ""
+        return "" if s in ("nan", "None", "NaN", "") else s
+
+
+def _fmt_brl(val):
+    """Formata valor como moeda brasileira: R$ 1.234,56"""
+    try:
+        f = float(val)
+        # Formata com 2 casas decimais, separador de milhar e vírgula decimal
+        inteiro, decimal = f"{f:,.2f}".split(".")
+        inteiro = inteiro.replace(",", ".")   # milhar com ponto
+        return f"R$ {inteiro},{decimal}"
     except Exception:
         s = str(val) if val is not None else ""
         return "" if s in ("nan", "None", "NaN", "") else s
@@ -106,8 +126,15 @@ def _secao(df_sec, titulo, cor_header, cor_row, cor_font, col_widths, cor_bolinh
             linha.append(_p("●", size=9, bold=True, color=cor_bolinha, align=TA_CENTER))
         for c in colunas:
             v   = row.get(c, "")
-            txt = _fmt(v)
-            al  = TA_CENTER if c in ("SALDO TOTAL", "ENTRADA", "SAIDA") else TA_LEFT
+            # ── formatação: BRL para colunas monetárias, genérica para o resto ──
+            if c in _COLUNAS_BRL:
+                txt = _fmt_brl(v)
+            elif c in _COLUNAS_TEXTO:
+                s = str(v) if v is not None else ""
+                txt = "" if s in ("nan", "None", "NaN", "") else s
+            else:
+                txt = _fmt(v)
+            al  = TA_CENTER
             linha.append(_p(txt, size=7, color=COR_TEXTO, align=al))
         rows.append(linha)
 
@@ -215,12 +242,16 @@ def gerar_bytes_relatorio(df_alerta, df_zerado, logo_path="logo_luft.png"):
     # ── Larguras das colunas ─────────────────────────────────────────────
     if colunas:
         FIXAS = {
-            "SALDO TOTAL": 18*mm,
-            "ENTRADA":     16*mm,
-            "SAIDA":       16*mm,
-            "CÓDIGO":      22*mm,
-            "STATUS":      20*mm,
-            "POSIÇÃO":     16*mm,
+            "GRUPO":             12*mm,   # '0617' — código curto
+            "CÓDIGO":            26*mm,   # '0617000211' — 10 chars
+            "U.M.":              10*mm,   # 'U.N' / 'PC'
+            "POSIÇÃO":           28*mm,   # 'MAT.A.01.469' — cabe numa linha
+            "STATUS":            18*mm,   # 'ESTOQUE'
+            "ENTRADA":           14*mm,
+            "SAIDA":             14*mm,
+            "SALDO TOTAL":       16*mm,
+            "VALORES UNITÁRIOS": 26*mm,
+            "VALOR TOTAL":       26*mm,
         }
         larguras  = [FIXAS.get(c) for c in colunas]
         w_fixo    = sum(w for w in larguras if w is not None)
